@@ -17,6 +17,9 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 PORT = int(sys.argv[1])
 STATE = sys.argv[2]
+# Every request must carry this token, so the test proves the script read it
+# from --api-token-file and sent it.
+TOKEN = sys.argv[3]
 
 for name in ("tokens", "apps", "policies"):
     path = os.path.join(STATE, name + ".json")
@@ -56,9 +59,17 @@ class Handler(BaseHTTPRequestHandler):
     def _app_id(path):
         return path.split("/access/apps/")[1].split("/")[0]
 
+    def _authorised(self):
+        if self.headers.get("Authorization") == "Bearer " + TOKEN:
+            return True
+        self._send(None, success=False)
+        return False
+
     def do_GET(self):
         if self.path == "/health":
             return self._send([])
+        if not self._authorised():
+            return
         if self.path.endswith("/access/service_tokens"):
             return self._send(list(load("tokens").values()))
         if self.path.endswith("/access/apps"):
@@ -70,6 +81,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         body = self._body()
+        if not self._authorised():
+            return
 
         if self.path.endswith("/access/service_tokens"):
             if "fail" in body["name"]:
@@ -106,6 +119,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_PUT(self):
         body = self._body()
+        if not self._authorised():
+            return
         if "/policies/" in self.path:
             pid = self.path.rsplit("/", 1)[1]
             policies = load("policies")
