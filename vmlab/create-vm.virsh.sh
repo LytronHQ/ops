@@ -146,8 +146,12 @@ names() { local e; for e in "${VMS[@]}"; do echo "$PREFIX${e%%:*}"; done; }
 
 print_ips() { for n in $(names); do printf '%-14s %s\n' "$n" "$(ip_of "$n")"; done; }
 
-ip_of() { # name — from the DHCP leases of the default network
-  v net-dhcp-leases default 2>/dev/null | awk -v n="$1" '$0 ~ n {print $5}' | cut -d/ -f1 | head -1
+ip_of() { # name
+  # Ask the domain, not the network. Leases outlive their VMs by up to an hour,
+  # and a new lab reuses the old names, so looking a lease up by hostname
+  # returned the PREVIOUS lab's address — and the wait below was satisfied by
+  # it at once. domifaddr matches on this domain's MAC, which is new each time.
+  v -q domifaddr "$1" --source lease 2>/dev/null | awk '/ipv4/ {print $4}' | cut -d/ -f1 | head -1
 }
 
 case "${1:-status}" in
