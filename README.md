@@ -26,11 +26,11 @@ A fresh server has `curl` and little else. `ops-get` fetches one script from a
 pinned release and verifies it before it ever runs.
 
 ```sh
-curl -fsSL https://github.com/LytronHQ/ops/releases/download/v1.1.0/ops-get -o ops-get
+curl -fsSL https://github.com/LytronHQ/ops/releases/download/v2.0.0/ops-get -o ops-get
 echo "4609e46737242a91b3d17c049d0d64ae91dd01d2f04c6bcb9913d446deca9450  ops-get" | sha256sum -c
 chmod +x ops-get
 
-./ops-get harden.sh v1.1.0 /tmp/harden.sh
+./ops-get harden.sh v2.0.0 /tmp/harden.sh
 sudo /tmp/harden.sh
 ```
 
@@ -46,7 +46,7 @@ ops-get <script> <version> [destination]
 | Argument | Required | Meaning |
 |---|---|---|
 | `<script>` | yes | the asset filename, e.g. `harden.sh`. No path — release assets are flat |
-| `<version>` | yes | a release tag, e.g. `v1.1.0`. There is deliberately no "latest" |
+| `<version>` | yes | a release tag, e.g. `v2.0.0`. There is deliberately no "latest" |
 | `[destination]` | no | where to write it. Default: `./<script>` |
 
 | Variable | Default | Meaning |
