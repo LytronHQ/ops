@@ -7,6 +7,7 @@ self-contained file with no imports and nothing about my projects baked in.
 |---|---|---|---|
 | [`harden/`](harden/) | firewall, auto-updates, fail2ban, key-only SSH | the server you are configuring | `harden.sh` |
 | [`vmlab/`](vmlab/) | libvirt VMs without sudo: a throwaway lab or a single VM | your own machine | `vmlab.sh` |
+| [`cloudflare/`](cloudflare/) | Cloudflare Access for machines: app, policy, service tokens | your machine or CI | `cf-access.sh` |
 
 Every script is fetched the same way, whichever machine it runs on: `ops-get`
 downloads it from a pinned release and verifies its checksum. There is no second
