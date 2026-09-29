@@ -20,45 +20,52 @@ Like every module, with [`ops-get`](../README.md#ops-get):
 ## Use it
 
 ```sh
-./vmlab.sh create     # create + boot, print the addresses and the ssh command
-./vmlab.sh status     # name, state, RAM, address
-./vmlab.sh stop       # shut them down, keep the disks (frees the RAM)
-./vmlab.sh start      # boot them again
-./vmlab.sh destroy    # delete everything
+./vmlab.sh create                                                    # the default lab
+./vmlab.sh create --name web-1 --memory 2048 --vcpu 2 --disk 40gb    # one VM
+./vmlab.sh status                          # every vmlab VM: state, RAM, address
+./vmlab.sh stop                            # shut them down, keep the disks
+./vmlab.sh start --name web-1              # boot one again
+./vmlab.sh destroy --name web-1            # delete one
+./vmlab.sh destroy --all                   # delete every vmlab VM
 ```
 
-A single VM is a lab of one:
-
-```sh
-VMLAB_VMS="web-1:2048:2:40" ./vmlab.sh create    # 2 GB RAM, 2 vCPU, 40 GB disk
-VMLAB_VMS="web-1:2048:2:40" ./vmlab.sh destroy
-```
-
-A four-VM lab costs a few hundred MB of disk: thin qcow2 overlays on one cached
-base image.
+`create` with no `--name` makes the default lab: `db` (2 GB), `app1`, `app2`
+(1.5 GB) and `app3` (1 GB). A four-VM lab costs a few hundred MB of disk: thin
+qcow2 overlays on one cached base image.
 
 | Command | Does |
 |---|---|
-| `create` | check prerequisites, then create and boot every VM, wait for DHCP, print the addresses and the ssh command. VMs that already exist are left alone |
-| `ips` | name and address for each |
-| `status` | name, power state, RAM, address, and the RAM in use |
-| `start` | boot every VM that is not running, in the order `VMLAB_VMS` lists them |
-| `stop` | shut every running VM down gracefully and wait until they are off |
-| `destroy` | force off, undefine, delete the disks, forget the SSH host keys |
-| `help` | print the usage |
+| `create` | check prerequisites, then create and boot the VMs, wait for DHCP, print the addresses and the ssh command. A VM that already exists is left alone |
+| `status` | name, power state, RAM and address, and the RAM in use |
+| `ips` | name and address |
+| `start` | boot the VMs that are not running, in the order named |
+| `stop` | shut the running ones down gracefully, and wait until they are off |
+| `destroy` | force off, undefine, delete the disks, forget the SSH host keys. Needs `--name` or `--all` |
+| `help` | print the options |
 
-| Variable | Default | Meaning |
+## Options
+
+Every input is a flag; `--help` lists them. Nothing is read from the
+environment except `HOME` and `XDG_CACHE_HOME`, which say where your keys and
+the image cache are. Unknown flags and bad values stop the run before anything
+is created. `--flag value` and `--flag=value` both work.
+
+| Flag | Default | Meaning |
 |---|---|---|
-| `VMLAB_VMS` | `db:2048:2 app1:1536:2 app2:1536:2 app3:1024:1` | the VMs: `name:ram_mb:vcpu[:disk_gb]`, space or comma separated. Disk defaults to 20 GB. Every command needs the same value `create` had, to know which VMs it means |
-| `VMLAB_KEY` | first of `~/.ssh/id_ed25519`, `id_ecdsa`, `id_rsa` with a `.pub` beside it | path to your **private** key. Its `.pub` is authorised inside the VMs, so this is the key you connect with |
-| `VMLAB_LAUNCHPAD` | none | a Launchpad id whose published SSH keys are authorised too — for connecting from a machine whose key is not on this one. Fails if the id has no keys |
-| `VMLAB_USER` | `dev` | login user created inside each VM, with passwordless sudo |
-| `VMLAB_PREFIX` | `vmlab-` | prefix for VM names, so the lab does not collide with your other VMs |
-| `VMLAB_IMAGE` | Ubuntu 24.04 cloud image | URL of the base image, qcow2. Downloaded once, then cached in `~/.cache/vmlab`. The Debian 12 `genericcloud` image works too |
-| `VMLAB_DIR` | `/var/tmp/vmlab` | where disks live. Must be readable by the qemu user — **not** under a `0750` home directory |
+| `--name <name>` | every vmlab VM; for `create`, the default lab | the VM to act on. Repeatable. It is called `<prefix><name>`, so vmlab never touches a VM it did not make |
+| `--all` | | `destroy`: every vmlab VM |
+| `--memory <size>` | `2048` | `create`: RAM. MB, or with `mb`/`gb`: `2048`, `2gb` |
+| `--vcpu <n>` | `2` | `create`: vCPUs |
+| `--disk <size>` | `20gb` | `create`: disk. GB, or with `gb`/`mb`: `40`, `40gb`. The root partition grows to it on first boot |
+| `--key <path>` | first of `~/.ssh/id_ed25519`, `id_ecdsa`, `id_rsa` with a `.pub` | `create`: your **private** key. Its `.pub` is authorised, so this is the key you connect with |
+| `--launchpad <id>` | none | `create`: also authorise this Launchpad id's published keys — for connecting from a machine whose key is not on this one. Repeatable. Fails if the id has no keys |
+| `--user <name>` | `dev` | `create`: login user, with passwordless sudo |
+| `--image <url>` | Ubuntu 24.04 cloud image | `create`: base image, qcow2. Downloaded once, cached in `~/.cache/vmlab`. The Debian 12 `genericcloud` image works too |
+| `--prefix <p>` | `vmlab-` | VM name prefix. Everything with it is "a vmlab VM" |
+| `--dir <path>` | `/var/tmp/vmlab` | where disks live. Must be readable by the qemu user — **not** under a `0750` home directory. Every command needs the same value `create` had |
 
-The VMs are key-only. `create` refuses to build one nobody could log into: it
-needs at least one key, from `VMLAB_KEY` or `VMLAB_LAUNCHPAD`. Before downloading
+The VMs are key-only, so `create` refuses to build one nobody could log into: it
+needs at least one key, from `--key` or `--launchpad`. Before downloading
 anything it also checks the tools, that libvirt is reachable and that its
 `default` network is active, and says what to do about whichever is missing.
 
@@ -72,6 +79,8 @@ All are commented in the source where they bite:
 - the backing image must sit **beside the overlays**, not under `$HOME`. qemu
   opens it as its own uid and cannot traverse a `0750` home directory, and the
   error it gives names the overlay rather than the backing file
+- the shared base image is deleted only with the **last** VM: every disk is an
+  overlay reading from it, so deleting it with one VM breaks the rest
 - addresses come from the VM's own interface, not from the network's leases by
   name: leases outlive their VMs, and a new lab reuses the names
 - Launchpad keys are fetched on the host and written into the seed, not
