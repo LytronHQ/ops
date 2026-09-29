@@ -1,22 +1,22 @@
 #!/usr/bin/env bash
 #
-# create-vm.virsh.sh — a throwaway libvirt/KVM lab of several VMs, for testing
-# against real separate hosts, with NO sudo and no virt-install.
-#
-# Part of the create-vm.<provider>.<ext> family. The sibling
-# create-vm.virt-manager.sh creates ONE production-shaped VM and needs virtinst
-# plus sudo (its disks land in /var/lib/libvirt/images, which is root-owned).
-# This one creates a whole disposable LAB from what an unprivileged account
+# vmlab.sh — libvirt/KVM VMs on your own machine, with NO sudo and no
+# virt-install: a lab of several for testing against real separate hosts, or a
+# single one (a lab of one). Everything comes from what an unprivileged account
 # already has:
 #
 #   * membership of the `libvirt` group  -> qemu:///system without sudo
 #   * an ACL on /dev/kvm                 -> real acceleration
 #   * libvirt's `default` network        -> 192.168.122.0/24
 #
-#   ./create-vm.virsh.sh up       # create + boot, print IPs
-#   ./create-vm.virsh.sh ips      # name -> IP
-#   ./create-vm.virsh.sh status
-#   ./create-vm.virsh.sh down     # destroy, undefine, delete the disks
+#   ./vmlab.sh create    # create + boot, print IPs
+#   ./vmlab.sh ips       # name -> IP
+#   ./vmlab.sh status    # name, state, RAM, IP
+#   ./vmlab.sh stop      # shut the VMs down, keep them (frees the RAM)
+#   ./vmlab.sh start     # boot them again
+#   ./vmlab.sh destroy   # destroy, undefine, delete the disks
+#
+#   VMLAB_VMS="web-1:2048:2:40" ./vmlab.sh create    # one VM, 40 GB disk
 #
 # Then point whatever you are testing at the printed IPs. The guests are
 # unmodified cloud images: cloud-init creates the user and nothing else.
@@ -26,7 +26,9 @@
 #      VMLAB_USER (login user, default `dev`)
 #      VMLAB_PREFIX (VM name prefix, default `vmlab-`)
 #      VMLAB_IMAGE (cloud image URL)
-#      VMLAB_VMS (the lab, "name:ram_mb:vcpu ...", default the VMS list below)
+#      VMLAB_LAUNCHPAD (Launchpad id whose SSH keys to authorise too)
+#      VMLAB_VMS (the lab, "name:ram_mb:vcpu[:disk_gb] ...", default the VMS
+#                 list below; disk defaults to 20 GB)
 #      VMLAB_DIR (where disks live, default /var/tmp/vmlab)
 #
 # Prereqs: qemu-utils, genisoimage, libvirt-clients. No virtinst, no sudo.
@@ -36,8 +38,6 @@ set -euo pipefail
 # by the qemu user, and the failure is an opaque permission error at domain start.
 LAB="${VMLAB_DIR:-/var/tmp/vmlab}"
 CONN="qemu:///system"
-# Cached in the same place create-vm.virt-manager.sh caches, so the two scripts
-# share one download.
 CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/vmlab"
 IMAGE="${VMLAB_IMAGE:-https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-amd64.img}"
 CACHED="$CACHE/$(basename "$IMAGE")"
@@ -53,11 +53,12 @@ if [ -z "$KEY" ]; then
     [ -f "$HOME/.ssh/$k.pub" ] && { KEY="$HOME/.ssh/$k"; break; }
   done
 fi
+LAUNCHPAD="${VMLAB_LAUNCHPAD:-}"
 USER_NAME="${VMLAB_USER:-dev}"
 PREFIX="${VMLAB_PREFIX:-vmlab-}"
 
-# name:ram_mb:vcpu — a database host and three small app hosts.
-# vms.virt-manager.sh starts anything named *db* first.
+# name:ram_mb:vcpu[:disk_gb] — a database host and three small app hosts. `start` boots
+# them in this order, so list first whatever the others depend on.
 VMS=(
   "db:2048:2"
   "app1:1536:2"
@@ -66,13 +67,13 @@ VMS=(
 )
 # Overridable without editing: this file is fetched pinned and checksummed, and
 # a local edit is both lost on the next version and indistinguishable from
-# tampering. `down` needs the same value `up` had, to know what to remove.
+# tampering. `destroy` needs the same value `create` had, to know what to remove.
 if [ -n "${VMLAB_VMS:-}" ]; then
   read -r -a VMS <<<"${VMLAB_VMS//,/ }"
 fi
 for e in "${VMS[@]}"; do
-  [[ "$e" =~ ^[a-z0-9][a-z0-9-]*:[0-9]+:[0-9]+$ ]] \
-    || { echo "error: VMLAB_VMS entry '$e' is not name:ram_mb:vcpu" >&2; exit 1; }
+  [[ "$e" =~ ^[a-z0-9][a-z0-9-]*:[0-9]+:[0-9]+(:[0-9]+)?$ ]] \
+    || { echo "error: VMLAB_VMS entry '$e' is not name:ram_mb:vcpu[:disk_gb]" >&2; exit 1; }
 done
 
 die() { echo "error: $*" >&2; exit 1; }
@@ -84,8 +85,7 @@ need() { command -v "$1" >/dev/null 2>&1 || die "missing '$1' — on Ubuntu/Debi
 # Everything that can fail, checked before a 600 MB download rather than after.
 preflight() {
   need qemu-img; need genisoimage; need virsh; need curl
-  [ -n "$KEY" ] || die "no SSH key found in ~/.ssh (id_ed25519, id_ecdsa, id_rsa); make one with ssh-keygen or set VMLAB_KEY"
-  [ -f "$KEY.pub" ] || die "no public key at $KEY.pub (set VMLAB_KEY to a private key that has a .pub beside it)"
+  collect_keys
   v list >/dev/null 2>&1 \
     || die "cannot reach $CONN. Are you in the libvirt group? sudo usermod -aG libvirt \$USER, then log out and in"
   # Captured, not piped into grep -q: grep exits at the first match, virsh
@@ -95,8 +95,30 @@ preflight() {
     || die "libvirt network 'default' is not active: virsh -c $CONN net-start default (and net-autostart default)"
 }
 
-create_one() { # name ram vcpu
-  local name="$PREFIX$1" ram="$2" cpu="$3"
+# The guests are key-only, so no key means no way in. Gather every key to
+# authorise — the local one, Launchpad's, or both — and refuse to build a VM
+# nobody can log into.
+collect_keys() {
+  AUTH_KEYS=""
+  if [ -n "${VMLAB_KEY:-}" ] && [ ! -f "$KEY.pub" ]; then
+    die "no public key at $KEY.pub (set VMLAB_KEY to a private key that has a .pub beside it)"
+  fi
+  if [ -n "$KEY" ] && [ -f "$KEY.pub" ]; then AUTH_KEYS="$(cat "$KEY.pub")"; fi
+  if [ -n "$LAUNCHPAD" ]; then
+    # Fetched here, on the host, and written into the seed — not ssh_import_id
+    # inside the guest: Ubuntu *minimal* images do not ship ssh-import-id, and
+    # there an in-guest import silently imports nothing.
+    local lp
+    lp="$(curl -fsSL "https://launchpad.net/~$LAUNCHPAD/+sshkeys" 2>/dev/null || true)"
+    lp="$(printf '%s\n' "$lp" | grep -E '^(ssh-|ecdsa-|sk-)' || true)"
+    [ -n "$lp" ] || die "Launchpad user '$LAUNCHPAD' has no SSH keys, or does not exist: https://launchpad.net/~$LAUNCHPAD/+sshkeys"
+    AUTH_KEYS="$(printf '%s\n%s\n' "$AUTH_KEYS" "$lp" | sed '/^$/d')"
+  fi
+  [ -n "$AUTH_KEYS" ] || die "no SSH key found in ~/.ssh (id_ed25519, id_ecdsa, id_rsa). Make one with ssh-keygen, or set VMLAB_KEY or VMLAB_LAUNCHPAD"
+}
+
+create_one() { # name ram vcpu disk_gb
+  local name="$PREFIX$1" ram="$2" cpu="$3" size="${4:-20}"
   local disk="$LAB/$name.qcow2" seed="$LAB/$name-seed.iso"
 
   if v dominfo "$name" >/dev/null 2>&1; then
@@ -105,13 +127,13 @@ create_one() { # name ram vcpu
   fi
 
   # A thin overlay on the shared base: each VM costs a few hundred MB, not 3.5G.
-  qemu-img create -q -f qcow2 -F qcow2 -b "$BASE" "$disk" 20G
+  # The size is only a ceiling; cloud-init grows the root partition to it.
+  qemu-img create -q -f qcow2 -F qcow2 -b "$BASE" "$disk" "${size}G"
 
   # NoCloud seed. The label MUST be `cidata`, and it is attached as a virtio-blk
   # disk rather than a CD-ROM: a CD enumerates too late, so cloud-init's
   # ds-identify misses it at boot and disables itself entirely — no user, no
-  # keys, no network. (The same lesson is written into
-  # create-vm.virt-manager.sh.)
+  # keys, no network.
   local work; work="$(mktemp -d)"
   cat > "$work/user-data" <<EOF
 #cloud-config
@@ -127,7 +149,7 @@ users:
     shell: /bin/bash
     lock_passwd: true
     ssh_authorized_keys:
-      - $(cat "$KEY.pub")
+$(printf '%s\n' "$AUTH_KEYS" | sed 's/"/\\"/g; s/^/      - "/; s/$/"/')
 EOF
   printf 'instance-id: %s\nlocal-hostname: %s\n' "$name" "$name" > "$work/meta-data"
   genisoimage -quiet -output "$seed" -volid cidata -joliet -rock \
@@ -173,7 +195,7 @@ EOF
 </domain>
 EOF
   v start "$name" >/dev/null
-  log "▶ created and started $name (${ram}MB, ${cpu} vCPU)"
+  log "▶ created and started $name (${ram}MB, ${cpu} vCPU, ${size}G disk)"
 }
 
 names() { local e; for e in "${VMS[@]}"; do echo "$PREFIX${e%%:*}"; done; }
@@ -192,7 +214,7 @@ case "${1:-status}" in
   -h|--help|help)
     sed -n '3,/^set -euo/p' "$0" | sed '$d; s/^# \{0,1\}//'
     ;;
-  up)
+  create)
     preflight
     mkdir -p "$LAB" "$CACHE"
     if [ ! -f "$CACHED" ]; then
@@ -206,8 +228,8 @@ case "${1:-status}" in
       chmod a+r "$BASE"
     fi
     for e in "${VMS[@]}"; do
-      IFS=: read -r n ram cpu <<<"$e"
-      create_one "$n" "$ram" "$cpu"
+      IFS=: read -r n ram cpu size <<<"$e"
+      create_one "$n" "$ram" "$cpu" "$size"
     done
     log "==> waiting for DHCP leases"
     for _ in $(seq 1 60); do
@@ -231,18 +253,53 @@ case "${1:-status}" in
 
     print_ips
     log ""
-    log "connect:  ssh -i $KEY $USER_NAME@<address>"
+    if [ -n "$KEY" ] && [ -f "$KEY.pub" ]; then
+      log "connect:  ssh -i $KEY $USER_NAME@<address>"
+    else
+      log "connect:  ssh $USER_NAME@<address>   (with a key from lp:$LAUNCHPAD)"
+    fi
     log "(cloud-init may need a few more seconds after an address appears)"
     ;;
   ips) print_ips ;;
   status)
-    for n in $(names); do
+    total=0
+    for e in "${VMS[@]}"; do
+      IFS=: read -r n ram _ <<<"$e"; n="$PREFIX$n"
       # virsh prints a trailing blank line; without trimming, the table wraps.
       st="$(v domstate "$n" 2>/dev/null | head -1 || true)"
-      printf '%-14s %-10s %s\n' "$n" "${st:-undefined}" "$(ip_of "$n")"
+      [ "$st" = "running" ] && total=$((total + ram))
+      printf '%-14s %-10s %6s MiB  %s\n' "$n" "${st:-undefined}" "$ram" "$(ip_of "$n")"
+    done
+    echo "running: ${total} MiB"
+    ;;
+  start)
+    # In the order the lab lists them, so a VM others depend on comes up first.
+    for n in $(names); do
+      st="$(v domstate "$n" 2>/dev/null | head -1 || true)"
+      case "$st" in
+        "")      log "· $n does not exist (run: $0 create)" ;;
+        running) log "· $n already running" ;;
+        *)       v start "$n" >/dev/null && log "▶ started $n" ;;
+      esac
     done
     ;;
-  down)
+  stop)
+    for n in $(names); do
+      [ "$(v domstate "$n" 2>/dev/null | head -1 || true)" = "running" ] \
+        && v shutdown "$n" >/dev/null && log "⏻ shutting down $n"
+    done
+    # Wait for the guests to power off. Returning at once meant an immediate
+    # `start` saw them still "running" and skipped them all.
+    for _ in $(seq 1 60); do
+      up=0
+      for n in $(names); do [ "$(v domstate "$n" 2>/dev/null | head -1 || true)" = "running" ] && up=1; done
+      [ "$up" = "0" ] && break
+      sleep 2
+    done
+    [ "$up" = "0" ] || die "some VMs are still running after 2 minutes (force: virsh -c $CONN destroy <name>)"
+    log "lab stopped; disks kept. '$0 start' boots it again, '$0 destroy' deletes it."
+    ;;
+  destroy)
     for n in $(names); do
       # The next lab reuses these addresses with new host keys, so leaving the
       # old ones behind turns the following run's first ssh into a hard failure.
@@ -254,7 +311,7 @@ case "${1:-status}" in
     done
     rm -f "$LAB/base.img"
     rmdir "$LAB" 2>/dev/null || true
-    log "(base image kept in $CACHE so the next 'up' needs no download)"
+    log "(base image kept in $CACHE so the next 'create' needs no download)"
     ;;
-  *) die "usage: $0 {up|ips|status|down|help}" ;;
+  *) die "usage: $0 {create|ips|status|start|stop|destroy|help}" ;;
 esac

@@ -6,7 +6,7 @@ self-contained file with no imports and nothing about my projects baked in.
 | Module | What it does | Runs on | Scripts |
 |---|---|---|---|
 | [`harden/`](harden/) | firewall, auto-updates, fail2ban, key-only SSH | the server you are configuring | `harden.sh` |
-| [`vmlab/`](vmlab/) | throwaway libvirt VMs, with or without sudo | your own machine | `create-vm.virsh.sh`, `create-vm.virt-manager.sh`, `destroy-vm.virt-manager.sh`, `vms.virt-manager.sh` |
+| [`vmlab/`](vmlab/) | libvirt VMs without sudo: a throwaway lab or a single VM | your own machine | `vmlab.sh` |
 
 Every script is fetched the same way, whichever machine it runs on: `ops-get`
 downloads it from a pinned release and verifies its checksum. There is no second
