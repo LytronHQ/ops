@@ -3,10 +3,10 @@
 Scripts for the boring parts of running a machine. Each one is a single
 self-contained file with no imports and nothing about my projects baked in.
 
-| Module | What it does | Runs on |
-|---|---|---|
-| [`harden/`](harden/) | firewall, auto-updates, fail2ban, key-only SSH | the server you are configuring |
-| [`vmlab/`](vmlab/) | throwaway libvirt VMs, with or without sudo | your own machine |
+| Module | What it does | Runs on | Scripts |
+|---|---|---|---|
+| [`harden/`](harden/) | firewall, auto-updates, fail2ban, key-only SSH | the server you are configuring | `harden.sh` |
+| [`vmlab/`](vmlab/) | throwaway libvirt VMs, with or without sudo | your own machine | `create-vm.virsh.sh`, `create-vm.virt-manager.sh`, `destroy-vm.virt-manager.sh`, `vms.virt-manager.sh` |
 
 Every script is fetched the same way, whichever machine it runs on: `ops-get`
 downloads it from a pinned release and verifies its checksum. There is no second
@@ -22,12 +22,16 @@ A fresh server has `curl` and little else. `ops-get` fetches one script from a
 pinned release and verifies it before it ever runs.
 
 ```sh
-curl -fsSL https://github.com/LytronHQ/ops/releases/download/v1.0.0/ops-get -o ops-get
+curl -fsSL https://github.com/LytronHQ/ops/releases/download/v1.1.0/ops-get -o ops-get
+echo "4609e46737242a91b3d17c049d0d64ae91dd01d2f04c6bcb9913d446deca9450  ops-get" | sha256sum -c
 chmod +x ops-get
 
-./ops-get harden.sh v1.0.0 /tmp/harden.sh
+./ops-get harden.sh v1.1.0 /tmp/harden.sh
 sudo /tmp/harden.sh
 ```
+
+The second line checks `ops-get` itself against the hash printed here, before
+it runs. Everything after that, `ops-get` checks for you.
 
 ### Arguments
 
@@ -38,7 +42,7 @@ ops-get <script> <version> [destination]
 | Argument | Required | Meaning |
 |---|---|---|
 | `<script>` | yes | the asset filename, e.g. `harden.sh`. No path — release assets are flat |
-| `<version>` | yes | a release tag, e.g. `v1.0.0`. There is deliberately no "latest" |
+| `<version>` | yes | a release tag, e.g. `v1.1.0`. There is deliberately no "latest" |
 | `[destination]` | no | where to write it. Default: `./<script>` |
 
 | Variable | Default | Meaning |
@@ -65,9 +69,11 @@ with the wrong bytes.
 
 ### Two things it does not do
 
-**Verify itself.** Whatever fetches `ops-get` has nothing to check it against.
-If that matters, vendor the file into your own repository — it is 40 lines — so
-it carries your git history instead.
+**Verify itself.** Something has to check `ops-get` before it can check
+anything else. That is the hash on this page: it is only as trustworthy as this
+repository, which is also true of the release. For more than that, vendor the
+file into your own repository — it is about 50 lines — so it carries your own
+reviewed history instead.
 
 **Work against a private repo.** Fetching an asset from a private release needs
 a token, and putting a GitHub token on every host you are about to harden trades
@@ -75,12 +81,31 @@ one problem for a worse one.
 
 ## Releasing
 
-Push a tag. The workflow checks every script parses, publishes them as flat
-release assets, and writes the `SHA256SUMS` that `ops-get` verifies against.
-Nothing is consumable from a branch on purpose: a consumer pins a version or
-does not run at all.
+A release is every script as a flat asset, `ops-get`, and the `SHA256SUMS` that
+`ops-get` verifies against. Nothing is consumable from a branch on purpose: a
+consumer pins a version or does not run at all.
 
 Script filenames must be unique across the whole repo, since assets are flat.
+
+`.github/workflows/release.yml` does all of this when a `v*` tag is pushed. When
+Actions is unavailable, build the same thing locally from a clean checkout of
+the tag:
+
+```sh
+for f in $(find . -name '*.sh' -not -path './.git/*') ops-get; do
+  sh -n "$f" 2>/dev/null || bash -n "$f" || echo "does not parse: $f"
+done
+find . -mindepth 2 -name '*.sh' -not -path './.git/*' -printf '%f\n' | sort | uniq -d   # must print nothing
+
+rm -rf dist && mkdir dist
+find . -mindepth 2 -name '*.sh' -not -path './.git/*' -not -path './dist/*' -exec cp {} dist/ \;
+cp ops-get dist/
+(cd dist && sha256sum * > SHA256SUMS)
+gh release create vX.Y.Z dist/* --verify-tag --title vX.Y.Z --notes "..."
+```
+
+If a release changes `ops-get`, update its hash in the quick start above in
+the same commit.
 
 ## Licence
 
