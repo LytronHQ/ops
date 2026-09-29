@@ -66,7 +66,7 @@ environment. Unknown flags and missing values stop the run before any API call.
 
 | Object | Result |
 |---|---|
-| Access application | created for `ACCESS_HOSTNAME` if none exists, type `self_hosted` |
+| Access application | created for `--hostname` if none exists, type `self_hosted` |
 | Service tokens | each `--token` created if missing, duration `forever`; rotated if also a `--rotate` |
 | Policy | one policy, `decision: non_identity`, including this run's tokens **and** any already in it that still exist |
 
