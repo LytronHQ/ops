@@ -19,23 +19,26 @@ sudo /tmp/harden.sh
 Keep one extra port open — say a database only your private network reaches:
 
 ```sh
-sudo HARDEN_ALLOW="10.0.0.0/16:5432" /tmp/harden.sh
+sudo /tmp/harden.sh --allow 10.0.0.0/16:5432
 ```
 
 [`ops-get`](../README.md#ops-get) is how every module is fetched: a pinned
 release, checked against its `SHA256SUMS` before it is written.
 
-## Parameters
+## Options
 
-Environment variables rather than flags, because the usual caller is another
-script.
+Every input is a flag; `--help` lists them. Nothing is read from the
+environment except `SUDO_USER`, which sudo sets to say who ran it. Unknown
+flags and bad values stop the run before anything changes. `--flag value` and
+`--flag=value` both work.
 
-| Variable | Default | Meaning |
+| Flag | Default | Meaning |
 |---|---|---|
-| `HARDEN_ALLOW` | none | extra inbound rules, as `<source>:<port>[/proto]`. Space or comma separated, so `"10.0.0.0/16:5432 192.168.1.0/24:8090/udp"` is two rules. Protocol is `tcp` or `udp`, default `tcp`. An IPv6 source works: `2001:db8::/32:5432`. Anything not listed, other than SSH, is denied. Every rule is checked before anything changes, and one bad rule stops the run |
-| `HARDEN_SKIP` | none | steps to leave alone, space separated: any of `firewall`, `updates`, `fail2ban`, `ssh`. Use it when one of them is managed elsewhere |
-| `HARDEN_SSH_TAG` | `hardening` | names the file it writes to `/etc/ssh/sshd_config.d/10-<tag>.conf`. Change it if something else on the host already uses that name |
-| `HARDEN_SSH_KEY_CHECK` | `1` | `0` disables password SSH even though the user running the script has no authorised key. Only for when you log in as a different user who does |
+| `--allow <source>:<port>[/proto]` | none | keep a port open to a source. Repeatable, or comma separated: `--allow 10.0.0.0/16:5432,192.168.1.0/24:8090/udp` is two rules. Protocol is `tcp` or `udp`, default `tcp`. An IPv6 source works: `2001:db8::/32:5432`. Anything not listed, other than SSH, is denied. Every rule is checked before anything changes, and one bad rule stops the run |
+| `--skip <step>` | none | a step to leave alone: `firewall`, `updates`, `fail2ban` or `ssh`. Repeatable, or comma separated. Use it when one of them is managed elsewhere |
+| `--login-user <user>` | whoever ran sudo, else root | the user whose authorised key must exist before password SSH is turned off. Set it when you log in as a different user from the one running the script |
+| `--ssh-tag <name>` | `hardening` | names the files it writes: `/etc/ssh/sshd_config.d/10-<name>.conf` and `/etc/fail2ban/jail.d/<name>.local`. Change it if something else on the host already uses that name |
+| `-h`, `--help` | | print the options |
 
 Must run as root. Rerunning is safe: every step is idempotent.
 
@@ -54,9 +57,9 @@ hardened one.
 
 | Step | Result |
 |---|---|
-| firewall | `ufw` enabled, default deny inbound, allow outbound, the port(s) sshd listens on allowed, plus anything in `HARDEN_ALLOW` |
+| firewall | `ufw` enabled, default deny inbound, allow outbound, the port(s) sshd listens on allowed, plus anything in `--allow` |
 | updates | `unattended-upgrades` enabled with a daily package-list refresh |
-| fail2ban | installed and enabled; its `sshd` jail reads journald and bans the same port(s) the firewall allows SSH on, via `/etc/fail2ban/jail.d/<tag>.local`. The stock jail reads `/var/log/auth.log`, which Debian 12 does not have, and bans port 22 whatever sshd uses |
+| fail2ban | installed and enabled; its `sshd` jail reads journald and bans the same port(s) the firewall allows SSH on, via `/etc/fail2ban/jail.d/<name>.local`. The stock jail reads `/var/log/auth.log`, which Debian 12 does not have, and bans port 22 whatever sshd uses |
 | ssh | a drop-in disabling password and keyboard-interactive auth, and root password login |
 
 ## It will not lock you out
@@ -67,7 +70,7 @@ real lockout, found by running the script on a VM rather than by reading it.
 - **SSH on another port.** The firewall allows the port sshd actually listens
   on — from its config and from `ssh.socket` — not "port 22".
 - **No key yet.** It disables **password** SSH only, and only when the user
-  running it (`$SUDO_USER`, or root) has an authorised key. A server handed over
+  logging in (`--login-user`, default whoever ran sudo) has an authorised key. A server handed over
   as root + password keeps its password login, and the run exits `1` saying why.
 - **Something else re-enabling passwords.** sshd keeps the first value it reads,
   so a drop-in that sorts earlier silently wins. After reloading, it asks sshd
