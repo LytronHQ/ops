@@ -56,7 +56,7 @@ hardened one.
 |---|---|
 | firewall | `ufw` enabled, default deny inbound, allow outbound, the port(s) sshd listens on allowed, plus anything in `HARDEN_ALLOW` |
 | updates | `unattended-upgrades` enabled with a daily package-list refresh |
-| fail2ban | installed and enabled with its defaults |
+| fail2ban | installed and enabled; its `sshd` jail reads journald and bans the same port(s) the firewall allows SSH on, via `/etc/fail2ban/jail.d/<tag>.local`. The stock jail reads `/var/log/auth.log`, which Debian 12 does not have, and bans port 22 whatever sshd uses |
 | ssh | a drop-in disabling password and keyboard-interactive auth, and root password login |
 
 ## It will not lock you out
