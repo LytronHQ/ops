@@ -3,21 +3,25 @@
 # harden.sh — bring a fresh Linux host to a sane baseline. Idempotent; safe to
 # run again to re-apply.
 #
+#   sudo ./harden.sh [options]
+#   sudo ./harden.sh --allow 10.0.0.0/16:5432 --allow 203.0.113.4:8090/udp
+#
+# Options — every input is one; nothing else is read from the environment
+# except who ran sudo:
+#   --allow <source>:<port>[/tcp|udp]
+#                     keep this port open to this source. Repeatable, or
+#                     comma separated. Everything else inbound is denied.
+#   --skip <step>     leave a step alone: firewall, updates, fail2ban or ssh.
+#                     Repeatable, or comma separated.
+#   --login-user <u>  whose key must exist before password SSH is turned off
+#                     (default: the user who ran sudo, else root)
+#   --ssh-tag <name>  names the sshd drop-in and fail2ban jail file it writes
+#                     (default: hardening)
+#   -h, --help        this text
+#
 # SELF-CONTAINED ON PURPOSE. It knows nothing about the project deploying it, so
-# it can be copied into an unrelated one as-is. Everything project-specific is an
-# input:
-#
-#   HARDEN_ALLOW    extra inbound rules, "<source>:<port>[/proto]", space or
-#                   comma separated. Everything else inbound is denied.
-#                   e.g. HARDEN_ALLOW="10.0.0.0/16:8090 203.0.113.4:5432"
-#   HARDEN_SSH_TAG  name for the sshd drop-in (default "hardening")
-#   HARDEN_SKIP     space-separated steps to skip: firewall updates fail2ban ssh
-#   HARDEN_SSH_KEY_CHECK
-#                   "0" to disable password SSH even though the user running
-#                   this has no authorised key (default "1": refuse)
-#
-#   ./harden.sh
-#   HARDEN_ALLOW="10.0.0.0/16:8090" ./harden.sh
+# it can be copied into an unrelated one as-is. Everything project-specific is
+# one of the options above.
 #
 # What it does: a firewall denying inbound except SSH, unattended security
 # updates, fail2ban, and key-only SSH.
@@ -38,9 +42,35 @@ die()  { echo "!! [harden] $*" >&2; exit 1; }
 problems=0
 warn() { echo "!! [harden] $*" >&2; problems=$((problems + 1)); }
 
+usage() { sed -n '3,/^set -euo/p' "$0" | sed '$d; s/^# \{0,1\}//'; }
+
+# --- options, parsed and validated before anything changes -------------------
+# Flags, not environment variables: a misspelt variable is silently ignored,
+# a misspelt flag is an error, and the command line shows everything a run used.
+allow_args=() skip=() login_user="" ssh_tag="hardening"
+while [ $# -gt 0 ]; do
+  case "$1" in --*=*) set -- "${1%%=*}" "${1#*=}" "${@:2}" ;; esac
+  case "$1" in
+    --allow|--skip|--login-user|--ssh-tag)
+      [ $# -ge 2 ] && [ -n "$2" ] || die "$1 needs a value (try --help)" ;;
+  esac
+  case "$1" in
+    --allow)      IFS=', ' read -r -a v <<<"$2"; allow_args+=("${v[@]}"); shift 2 ;;
+    --skip)       IFS=', ' read -r -a v <<<"$2"; skip+=("${v[@]}"); shift 2 ;;
+    --login-user) login_user="$2"; shift 2 ;;
+    --ssh-tag)    ssh_tag="$2"; shift 2 ;;
+    -h|--help)    usage; exit 0 ;;
+    *)            die "unknown argument '$1' (try --help)" ;;
+  esac
+done
+for st in "${skip[@]}"; do
+  case "$st" in firewall|updates|fail2ban|ssh) ;; *) die "--skip: unknown step '$st' (firewall, updates, fail2ban, ssh)" ;; esac
+done
+[[ "$ssh_tag" =~ ^[A-Za-z0-9_-]+$ ]] || die "--ssh-tag: '$ssh_tag' must be letters, digits, - or _ (it becomes a file name)"
+
 [ "$(id -u)" = "0" ] || die "must run as root"
 
-skipped() { case " ${HARDEN_SKIP:-} " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
+skipped() { case " ${skip[*]} " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
 
 # --- platform ----------------------------------------------------------------
 # Only what differs between distributions sits behind $family: how packages are
@@ -101,22 +131,24 @@ install_packages() {
 # nothing saying why. So a bad rule stops the run here, while the host is still
 # untouched, rather than being skipped with a note that scrolls away.
 rules=()
-allow="${HARDEN_ALLOW:-}"
-for rule in ${allow//,/ }; do
-  case "$rule" in *:*) ;; *) die "HARDEN_ALLOW entry '$rule' is not <source>:<port>[/proto]. Nothing was changed." ;; esac
+for rule in "${allow_args[@]}"; do
+  case "$rule" in *:*) ;; *) die "--allow '$rule' is not <source>:<port>[/proto]. Nothing was changed." ;; esac
   # Split on the LAST colon, so an IPv6 source (2001:db8::/32:5432) survives.
   src="${rule%:*}"; portproto="${rule##*:}"
   port="${portproto%%/*}"; proto="tcp"
   case "$portproto" in */*) proto="${portproto##*/}" ;; esac
-  case "$port" in ''|*[!0-9]*) die "HARDEN_ALLOW entry '$rule': '$port' is not a port. Nothing was changed." ;; esac
-  { [ "$port" -ge 1 ] && [ "$port" -le 65535 ]; } || die "HARDEN_ALLOW entry '$rule': port $port is out of range. Nothing was changed."
-  case "$proto" in tcp|udp) ;; *) die "HARDEN_ALLOW entry '$rule': protocol must be tcp or udp. Nothing was changed." ;; esac
-  [ -n "$src" ] || die "HARDEN_ALLOW entry '$rule' has no source. Nothing was changed."
+  case "$port" in ''|*[!0-9]*) die "--allow '$rule': '$port' is not a port. Nothing was changed." ;; esac
+  { [ "$port" -ge 1 ] && [ "$port" -le 65535 ]; } || die "--allow '$rule': port $port is out of range. Nothing was changed."
+  case "$proto" in tcp|udp) ;; *) die "--allow '$rule': protocol must be tcp or udp. Nothing was changed." ;; esac
+  [ -n "$src" ] || die "--allow '$rule' has no source. Nothing was changed."
   rules+=("$src $port $proto")
 done
 
-# Whoever has to be able to log in again afterwards: the person running this.
-operator="${SUDO_USER:-$(id -un)}"
+# Whoever has to be able to log in again afterwards: the person running this,
+# unless told otherwise. SUDO_USER is not configuration — sudo sets it to say
+# who invoked it.
+operator="${login_user:-${SUDO_USER:-$(id -un)}}"
+getent passwd "$operator" >/dev/null || die "--login-user: no such user '$operator'"
 sshd_as() { sshd -T -C "user=$operator,host=localhost,addr=127.0.0.1" 2>/dev/null; }
 
 has_authorized_key() {
@@ -164,7 +196,7 @@ if ! skipped firewall; then
   for r in "${rules[@]}"; do
     read -r src port proto <<<"$r"
     out="$(ufw --dry-run allow from "$src" to any port "$port" proto "$proto" 2>&1)" \
-      || die "ufw rejects HARDEN_ALLOW rule $src:$port/$proto: $out. Firewall not changed."
+      || die "ufw rejects --allow $src:$port/$proto: $out. Firewall not changed."
   done
 
   for p in $ports; do
@@ -201,7 +233,7 @@ if ! skipped fail2ban; then
   # elsewhere it banned a port nobody uses. Name the jail's source and ports
   # explicitly; journald has sshd's log on every systemd distribution.
   f2b_ports="$(ssh_ports | paste -sd, -)"
-  cat >"/etc/fail2ban/jail.d/${HARDEN_SSH_TAG:-hardening}.local" <<EOF
+  cat >"/etc/fail2ban/jail.d/${ssh_tag}.local" <<EOF
 [sshd]
 enabled = true
 backend = systemd
@@ -221,14 +253,13 @@ EOF
 fi
 
 if ! skipped ssh; then
-  if [ "${HARDEN_SSH_KEY_CHECK:-1}" != "0" ] && ! has_authorized_key; then
+  if ! has_authorized_key; then
     # The session running this would survive, and the next login would not. A
     # VPS handed over as root + password is exactly this case.
-    warn "SSH: NOT disabling password login — '$operator' has no authorised SSH key, so the next login would be refused. Add one (ssh-copy-id) and run this again, or set HARDEN_SSH_KEY_CHECK=0 if you log in as a different user who has one."
+    warn "SSH: NOT disabling password login — '$operator' has no authorised SSH key, so the next login would be refused. Add one (ssh-copy-id) and run this again, or pass --login-user <user> if you log in as a different user who has one."
   else
     say "SSH: key-only (password auth off)"
-    tag="${HARDEN_SSH_TAG:-hardening}"
-    dropin="/etc/ssh/sshd_config.d/10-${tag}.conf"
+    dropin="/etc/ssh/sshd_config.d/10-${ssh_tag}.conf"
     mkdir -p /etc/ssh/sshd_config.d
     cat >"$dropin" <<'EOF'
 PasswordAuthentication no
