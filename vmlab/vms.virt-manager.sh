@@ -2,19 +2,20 @@
 #
 # vms.virt-manager.sh — power a group of dev VMs on/off (libvirt/KVM),
 # so you can free their RAM when you're not using them. Acts on every VM whose
-# name starts with the prefix (default "mon-"), leaving unrelated VMs alone.
+# name starts with the prefix (default "vmlab-", what
+# create-vm.virsh.sh names its lab), leaving unrelated VMs alone.
 #
 #   ./vms.virt-manager.sh up        # start them all (skips already-running)
 #   ./vms.virt-manager.sh down      # graceful shutdown of the running ones
 #   ./vms.virt-manager.sh status    # name · state · RAM
-#   ./vms.virt-manager.sh down mon-w-   # only VMs matching a custom prefix
+#   ./vms.virt-manager.sh down web-     # only VMs matching a custom prefix
 #
-# Env: VM_PREFIX overrides the default "mon-".
+# Env: VM_PREFIX overrides the default "vmlab-".
 set -euo pipefail
 
 CONN="qemu:///system"
 CMD="${1:-status}"
-PREFIX="${2:-${VM_PREFIX:-mon-}}"
+PREFIX="${2:-${VM_PREFIX:-vmlab-}}"
 
 die() { echo "error: $*" >&2; exit 1; }
 command -v virsh >/dev/null 2>&1 || die "missing 'virsh'"

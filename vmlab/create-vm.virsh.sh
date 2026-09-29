@@ -1,30 +1,29 @@
 #!/usr/bin/env bash
 #
-# create-vm.virsh.sh — a throwaway libvirt/KVM lab for testing the real fleet,
-# with NO sudo and no virt-install.
+# create-vm.virsh.sh — a throwaway libvirt/KVM lab of several VMs, for testing
+# against real separate hosts, with NO sudo and no virt-install.
 #
 # Part of the create-vm.<provider>.<ext> family. The sibling
 # create-vm.virt-manager.sh creates ONE production-shaped VM and needs virtinst
 # plus sudo (its disks land in /var/lib/libvirt/images, which is root-owned).
-# This one creates a whole disposable FLEET from what an unprivileged account
+# This one creates a whole disposable LAB from what an unprivileged account
 # already has:
 #
 #   * membership of the `libvirt` group  -> qemu:///system without sudo
 #   * an ACL on /dev/kvm                 -> real acceleration
-#   * libvirt's `default` network        -> 192.168.122.0/24, which is what the
-#                                           dev NODES already expect
+#   * libvirt's `default` network        -> 192.168.122.0/24
 #
-#   deploy/vm/create-vm.virsh.sh up       # create + boot, print IPs
-#   deploy/vm/create-vm.virsh.sh ips      # name -> IP
-#   deploy/vm/create-vm.virsh.sh status
-#   deploy/vm/create-vm.virsh.sh down     # destroy, undefine, delete the disks
+#   ./create-vm.virsh.sh up       # create + boot, print IPs
+#   ./create-vm.virsh.sh ips      # name -> IP
+#   ./create-vm.virsh.sh status
+#   ./create-vm.virsh.sh down     # destroy, undefine, delete the disks
 #
-# Then point your deploy tool at the printed IPs.
-# The guests need nothing pre-installed: setup-worker.sh installs Docker itself.
+# Then point whatever you are testing at the printed IPs. The guests are
+# unmodified cloud images: cloud-init creates the user and nothing else.
 #
 # Env: VMLAB_KEY (ssh key, default ~/.ssh/id_rsa)
 #      VMLAB_USER (login user, default `dev`)
-#      VMLAB_PREFIX (VM name prefix, default `mon-lab-`)
+#      VMLAB_PREFIX (VM name prefix, default `vmlab-`)
 #      VMLAB_IMAGE (cloud image URL)
 #
 # Prereqs: qemu-utils, genisoimage, libvirt-clients. No virtinst, no sudo.
@@ -45,14 +44,15 @@ CACHED="$CACHE/$(basename "$IMAGE")"
 BASE="$LAB/base.img"
 KEY="${VMLAB_KEY:-$HOME/.ssh/id_rsa}"
 USER_NAME="${VMLAB_USER:-dev}"
-PREFIX="${VMLAB_PREFIX:-mon-lab-}"
+PREFIX="${VMLAB_PREFIX:-vmlab-}"
 
-# name:ram_mb:vcpu — the smallest fleet that can hold two workers in one zone.
+# name:ram_mb:vcpu — a database host and three small app hosts. Edit to suit;
+# vms.virt-manager.sh starts anything named *db* first.
 VMS=(
   "db:2048:2"
-  "w1:1536:2"
-  "w2:1536:2"
-  "ev:1024:1"
+  "app1:1536:2"
+  "app2:1536:2"
+  "app3:1024:1"
 )
 
 die() { echo "error: $*" >&2; exit 1; }
@@ -77,7 +77,7 @@ create_one() { # name ram vcpu
   # disk rather than a CD-ROM: a CD enumerates too late, so cloud-init's
   # ds-identify misses it at boot and disables itself entirely — no user, no
   # keys, no network. (The same lesson is written into
-  # deploy/vm/create-vm.virt-manager.sh.)
+  # create-vm.virt-manager.sh.)
   local work; work="$(mktemp -d)"
   cat > "$work/user-data" <<EOF
 #cloud-config
