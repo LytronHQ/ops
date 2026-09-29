@@ -21,10 +21,13 @@
 # Then point whatever you are testing at the printed IPs. The guests are
 # unmodified cloud images: cloud-init creates the user and nothing else.
 #
-# Env: VMLAB_KEY (ssh key, default ~/.ssh/id_rsa)
+# Env: VMLAB_KEY (private key; default the first of ~/.ssh/id_ed25519,
+#                 id_ecdsa, id_rsa that has a .pub beside it)
 #      VMLAB_USER (login user, default `dev`)
 #      VMLAB_PREFIX (VM name prefix, default `vmlab-`)
 #      VMLAB_IMAGE (cloud image URL)
+#      VMLAB_VMS (the lab, "name:ram_mb:vcpu ...", default the VMS list below)
+#      VMLAB_DIR (where disks live, default /var/tmp/vmlab)
 #
 # Prereqs: qemu-utils, genisoimage, libvirt-clients. No virtinst, no sudo.
 set -euo pipefail
@@ -42,11 +45,18 @@ CACHED="$CACHE/$(basename "$IMAGE")"
 # cache: qemu opens it as its own uid, and it cannot traverse a 0750 home
 # directory. The cache is the download, this is the copy qemu actually reads.
 BASE="$LAB/base.img"
-KEY="${VMLAB_KEY:-$HOME/.ssh/id_rsa}"
+# ssh-keygen has defaulted to ed25519 for years, so ~/.ssh/id_rsa alone missed
+# most people's key.
+KEY="${VMLAB_KEY:-}"
+if [ -z "$KEY" ]; then
+  for k in id_ed25519 id_ecdsa id_rsa; do
+    [ -f "$HOME/.ssh/$k.pub" ] && { KEY="$HOME/.ssh/$k"; break; }
+  done
+fi
 USER_NAME="${VMLAB_USER:-dev}"
 PREFIX="${VMLAB_PREFIX:-vmlab-}"
 
-# name:ram_mb:vcpu — a database host and three small app hosts. Edit to suit;
+# name:ram_mb:vcpu — a database host and three small app hosts.
 # vms.virt-manager.sh starts anything named *db* first.
 VMS=(
   "db:2048:2"
@@ -54,12 +64,36 @@ VMS=(
   "app2:1536:2"
   "app3:1024:1"
 )
+# Overridable without editing: this file is fetched pinned and checksummed, and
+# a local edit is both lost on the next version and indistinguishable from
+# tampering. `down` needs the same value `up` had, to know what to remove.
+if [ -n "${VMLAB_VMS:-}" ]; then
+  read -r -a VMS <<<"${VMLAB_VMS//,/ }"
+fi
+for e in "${VMS[@]}"; do
+  [[ "$e" =~ ^[a-z0-9][a-z0-9-]*:[0-9]+:[0-9]+$ ]] \
+    || { echo "error: VMLAB_VMS entry '$e' is not name:ram_mb:vcpu" >&2; exit 1; }
+done
 
 die() { echo "error: $*" >&2; exit 1; }
 log() { echo "$*" >&2; }
 v() { virsh -c "$CONN" "$@"; }
 
-need() { command -v "$1" >/dev/null 2>&1 || die "missing '$1'"; }
+need() { command -v "$1" >/dev/null 2>&1 || die "missing '$1' — on Ubuntu/Debian: sudo apt install -y qemu-utils genisoimage libvirt-clients curl"; }
+
+# Everything that can fail, checked before a 600 MB download rather than after.
+preflight() {
+  need qemu-img; need genisoimage; need virsh; need curl
+  [ -n "$KEY" ] || die "no SSH key found in ~/.ssh (id_ed25519, id_ecdsa, id_rsa); make one with ssh-keygen or set VMLAB_KEY"
+  [ -f "$KEY.pub" ] || die "no public key at $KEY.pub (set VMLAB_KEY to a private key that has a .pub beside it)"
+  v list >/dev/null 2>&1 \
+    || die "cannot reach $CONN. Are you in the libvirt group? sudo usermod -aG libvirt \$USER, then log out and in"
+  # Captured, not piped into grep -q: grep exits at the first match, virsh
+  # takes SIGPIPE, and under pipefail an ACTIVE network then reads as inactive.
+  local net; net="$(v net-info default 2>/dev/null || true)"
+  [[ "$net" =~ Active:[[:space:]]+yes ]] \
+    || die "libvirt network 'default' is not active: virsh -c $CONN net-start default (and net-autostart default)"
+}
 
 create_one() { # name ram vcpu
   local name="$PREFIX$1" ram="$2" cpu="$3"
@@ -155,8 +189,11 @@ ip_of() { # name
 }
 
 case "${1:-status}" in
+  -h|--help|help)
+    sed -n '3,/^set -euo/p' "$0" | sed '$d; s/^# \{0,1\}//'
+    ;;
   up)
-    need qemu-img; need genisoimage; need virsh; need curl
+    preflight
     mkdir -p "$LAB" "$CACHE"
     if [ ! -f "$CACHED" ]; then
       log "==> downloading $(basename "$IMAGE") (once; cached in $CACHE)"
@@ -168,7 +205,6 @@ case "${1:-status}" in
       cp --reflink=auto "$CACHED" "$BASE"
       chmod a+r "$BASE"
     fi
-    [ -f "$KEY.pub" ] || die "no public key at $KEY.pub (set VMLAB_KEY)"
     for e in "${VMS[@]}"; do
       IFS=: read -r n ram cpu <<<"$e"
       create_one "$n" "$ram" "$cpu"
@@ -194,6 +230,9 @@ case "${1:-status}" in
     done
 
     print_ips
+    log ""
+    log "connect:  ssh -i $KEY $USER_NAME@<address>"
+    log "(cloud-init may need a few more seconds after an address appears)"
     ;;
   ips) print_ips ;;
   status)
@@ -217,5 +256,5 @@ case "${1:-status}" in
     rmdir "$LAB" 2>/dev/null || true
     log "(base image kept in $CACHE so the next 'up' needs no download)"
     ;;
-  *) die "usage: $0 {up|ips|status|down}" ;;
+  *) die "usage: $0 {up|ips|status|down|help}" ;;
 esac
