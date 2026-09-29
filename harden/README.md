@@ -12,7 +12,7 @@ server is the one place you cannot install a runtime first.
 ## Use it
 
 ```sh
-./ops-get harden.sh v1.0.0 /tmp/harden.sh
+./ops-get harden.sh v1.1.0 /tmp/harden.sh
 sudo /tmp/harden.sh
 ```
 

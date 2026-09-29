@@ -12,7 +12,7 @@ Like every module, with [`ops-get`](../README.md#ops-get). Each script is a
 single file with no imports, so fetch only the ones you use:
 
 ```sh
-./ops-get create-vm.virsh.sh v1.0.0
+./ops-get create-vm.virsh.sh v1.1.0
 ```
 
 Two ways in, depending on what your workstation lets you do:
