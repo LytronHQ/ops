@@ -18,6 +18,9 @@ CMD="${1:-status}"
 PREFIX="${2:-${VM_PREFIX:-vmlab-}}"
 
 die() { echo "error: $*" >&2; exit 1; }
+# Before looking for VMs: with none defined, that lookup fails, and help is
+# most needed exactly when you have none yet.
+case "$CMD" in -h|--help|help) sed -n '3,/^set -euo/p' "$0" | sed '$d; s/^# \{0,1\}//'; exit 0 ;; esac
 command -v virsh >/dev/null 2>&1 || die "missing 'virsh'"
 
 mapfile -t VMS < <(virsh -c "$CONN" list --all --name 2>/dev/null | grep -E "^${PREFIX}" || true)
@@ -60,9 +63,6 @@ case "$CMD" in
 		done
 		echo "-----"
 		echo "running RAM total: ${total} MiB"
-		;;
-	-h|--help|help)
-		sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'
 		;;
 	*)
 		die "unknown command '$CMD' (use: up | down | status)"

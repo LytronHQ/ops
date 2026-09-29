@@ -45,21 +45,24 @@ image.
 
 | Command | Does |
 |---|---|
-| `up` | create and boot every VM, wait for DHCP, print the addresses |
+| `up` | check prerequisites, then create and boot every VM, wait for DHCP, print the addresses and the ssh command |
 | `ips` | name and address for each |
 | `status` | name, power state, address |
 | `down` | destroy, undefine, delete the disks, forget the SSH host keys |
+| `help` | print the usage |
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `VMLAB_KEY` | `~/.ssh/id_rsa` | path to your **private** key. It authorises the matching `.pub` inside the VMs, so this is the key you will connect with |
+| `VMLAB_KEY` | first of `~/.ssh/id_ed25519`, `id_ecdsa`, `id_rsa` with a `.pub` beside it | path to your **private** key. It authorises the matching `.pub` inside the VMs, so this is the key you will connect with |
 | `VMLAB_USER` | `dev` | login user created inside each VM |
 | `VMLAB_PREFIX` | `vmlab-` | prefix for VM names, so a lab does not collide with your other VMs |
-| `VMLAB_IMAGE` | Ubuntu 24.04 cloud image | URL of the base image. Downloaded once, then cached |
+| `VMLAB_IMAGE` | Ubuntu 24.04 cloud image | URL of the base image, qcow2. Downloaded once, then cached. The Debian 12 `genericcloud` image works too |
+| `VMLAB_VMS` | `db:2048:2 app1:1536:2 app2:1536:2 app3:1024:1` | the lab: `name:ram_mb:vcpu`, space or comma separated. `down` needs the same value `up` had |
 | `VMLAB_DIR` | `/var/tmp/vmlab` | where disks live. Must be readable by the qemu user — **not** under a `0750` home directory |
 
-How many VMs and how big is the `VMS` array at the top of the file:
-`name:ram_mb:vcpu`, one per line. The default is four small ones.
+Before downloading anything, `up` checks the tools, your key, that libvirt is
+reachable and that its `default` network is active, and says what to do about
+whichever is missing.
 
 ## create-vm.virt-manager.sh — one VM, the conventional way
 
