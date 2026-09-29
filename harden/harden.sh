@@ -143,12 +143,17 @@ has_authorized_key() {
 ssh_ports() {
   {
     sshd -T 2>/dev/null | awk '$1 == "port" {print $2}'
-    systemctl show -p Listen ssh.socket 2>/dev/null | grep -oE ':[0-9]+ ' | tr -d ': '
+    # Only when it is active: Debian ships ssh.socket disabled, still saying
+    # port 22, and counting it opened 22 on a host whose sshd was on 2222.
+    if systemctl is-active --quiet ssh.socket 2>/dev/null; then
+      systemctl show -p Listen ssh.socket | grep -oE ':[0-9]+ ' | tr -d ': '
+    fi
   } | sort -un
 }
 
 say "packages"
-install_packages ufw unattended-upgrades fail2ban
+# python3-systemd lets fail2ban read journald, below.
+install_packages ufw unattended-upgrades fail2ban python3-systemd
 
 if ! skipped firewall; then
   ports="$(ssh_ports)"
@@ -185,11 +190,34 @@ APT::Periodic::Update-Package-Lists "1";
 APT::Periodic::Unattended-Upgrade "1";
 EOF
   systemctl enable --now unattended-upgrades >/dev/null 2>&1 || true
+  systemctl is-active --quiet unattended-upgrades || warn "unattended-upgrades is not running (systemctl status unattended-upgrades)"
 fi
 
 if ! skipped fail2ban; then
   say "fail2ban"
-  systemctl enable --now fail2ban >/dev/null 2>&1 || true
+  # The stock sshd jail fails on both counts that matter. It reads
+  # /var/log/auth.log, which Debian 12 does not have — journald only — so
+  # fail2ban refused to start there. And it bans port 22, so with sshd
+  # elsewhere it banned a port nobody uses. Name the jail's source and ports
+  # explicitly; journald has sshd's log on every systemd distribution.
+  f2b_ports="$(ssh_ports | paste -sd, -)"
+  cat >"/etc/fail2ban/jail.d/${HARDEN_SSH_TAG:-hardening}.local" <<EOF
+[sshd]
+enabled = true
+backend = systemd
+port    = ${f2b_ports:-ssh}
+EOF
+  systemctl enable fail2ban >/dev/null 2>&1 || true
+  # Restart, not enable --now: a fail2ban already running would not re-read
+  # the jail. Restarting it does not touch sshd or this session.
+  systemctl restart fail2ban >/dev/null 2>&1 || true
+  # The server answers before its jails are loaded; give it a moment.
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    fail2ban-client status sshd >/dev/null 2>&1 && break
+    sleep 1
+  done
+  fail2ban-client status sshd >/dev/null 2>&1 \
+    || warn "fail2ban's sshd jail is not running (journalctl -u fail2ban)"
 fi
 
 if ! skipped ssh; then
