@@ -1,0 +1,29 @@
+#!/bin/sh
+#
+# run-tests — run every test suite in the repo; exit non-zero if any fails.
+#
+#   ./run-tests
+#
+# Suites are tests/*_test.sh (ops-get) and <module>/tests/*_test.sh. Each runs
+# the real script against stubs and prints PASS; its output is shown only when
+# it fails, so a green run is one line per suite.
+set -u
+cd "$(dirname "$0")"
+
+n=0 failed=""
+for t in tests/*_test.sh */tests/*_test.sh; do
+  [ -f "$t" ] || continue
+  n=$((n + 1))
+  printf '%-44s ' "$t"
+  if out="$(bash "$t" 2>&1)"; then
+    echo ok
+  else
+    echo FAIL
+    printf '%s\n' "$out" | sed 's/^/    /'
+    failed="$failed $t"
+  fi
+done
+
+[ "$n" -gt 0 ] || { echo "no test suites found" >&2; exit 1; }
+[ -z "$failed" ] || { echo "failed:$failed" >&2; exit 1; }
+echo "all $n passed"

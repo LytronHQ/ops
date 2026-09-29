@@ -1,0 +1,25 @@
+name: test
+
+# The same suites a developer runs with ./run-tests, on every PR and on main, so
+# a change to a script cannot merge while its tests fail.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check every script parses
+        run: |
+          fail=0
+          for f in $(find . -name '*.sh' -not -path './.git/*') ops-get run-tests; do
+            sh -n "$f" 2>/dev/null || bash -n "$f" || { echo "::error::$f does not parse"; fail=1; }
+          done
+          exit $fail
+
+      - name: Run the test suites
+        run: ./run-tests

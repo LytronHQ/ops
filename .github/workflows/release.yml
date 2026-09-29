@@ -25,16 +25,20 @@ jobs:
           done
           exit $fail
 
+      - name: Run the test suites
+        run: ./run-tests
+
       - name: Collect assets and checksum them
         run: |
           mkdir -p dist
           # Flat asset names: a consumer asks for `harden.sh`, not a path.
           # Every module folder, discovered — adding a module needs no change here.
-          find . -mindepth 2 -name '*.sh' -not -path './.git/*' -not -path './dist/*' -exec cp {} dist/ \;
+          # Tests and their stubs are for working on the repo, never assets.
+          find . -mindepth 2 -name '*.sh' -not -path './.git/*' -not -path './dist/*' -not -path '*/tests/*' -exec cp {} dist/ \;
           cp ops-get dist/
           # Flat assets, so a duplicate filename across modules would silently
           # overwrite one of them. Refuse instead.
-          dupes="$(find . -mindepth 2 -name '*.sh' -not -path './.git/*' -not -path './dist/*' -printf '%f\n' | sort | uniq -d)"
+          dupes="$(find . -mindepth 2 -name '*.sh' -not -path './.git/*' -not -path './dist/*' -not -path '*/tests/*' -printf '%f\n' | sort | uniq -d)"
           [ -z "$dupes" ] || { echo "::error::duplicate script names across modules: $dupes"; exit 1; }
           cd dist && sha256sum * > SHA256SUMS && cat SHA256SUMS
 
