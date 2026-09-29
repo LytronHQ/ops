@@ -20,8 +20,8 @@ Keep one extra port open — say a database only your private network reaches:
 sudo HARDEN_ALLOW="10.0.0.0/16:5432" /tmp/harden.sh
 ```
 
-See [`ops-get`](../README.md#ops-get) for fetching it with a checksum, or just
-copy the file: it has no imports.
+[`ops-get`](../README.md#ops-get) is how every module is fetched: a pinned
+release, checked against its `SHA256SUMS` before it is written.
 
 ## Parameters
 

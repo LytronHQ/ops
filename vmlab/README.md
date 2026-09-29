@@ -5,7 +5,15 @@ printed, and gone again leaving nothing behind. For testing something against
 real separate hosts instead of containers on one.
 
 **Runs on:** your own machine.
-**Get it by:** cloning this repo. These are not fetched onto a server.
+
+## Get it
+
+Like every module, with [`ops-get`](../README.md#ops-get). Each script is a
+single file with no imports, so fetch only the ones you use:
+
+```sh
+./ops-get create-vm.virsh.sh v1.0.0
+```
 
 Two ways in, depending on what your workstation lets you do:
 
