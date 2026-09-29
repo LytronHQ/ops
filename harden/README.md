@@ -39,6 +39,12 @@ script.
 
 Must run as root. Rerunning is safe: every step is idempotent.
 
+On a freshly booted server apt is often still locked by cloud-init or
+`apt-daily`; it waits up to 10 minutes for the lock rather than failing. apt's
+own output is hidden unless it fails, and the run ends with the host's actual
+state — firewall rules, services, SSH password login — read back from the
+system.
+
 Exit status is `0` only when every step that was not skipped actually took
 effect. Anything it declined or failed to do is printed with `!!` and makes it
 exit `1`, so a provisioning run cannot mistake a half-hardened host for a

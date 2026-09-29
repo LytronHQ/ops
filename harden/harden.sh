@@ -59,12 +59,39 @@ case " $os_id $os_like " in
   *) die "unsupported OS '${os_name:-unknown}'. Implemented: the Debian family (Debian, Ubuntu). Nothing was changed." ;;
 esac
 
+# A freshly booted server is exactly when this runs, and exactly when cloud-init
+# or apt-daily is still holding apt's locks. Waiting is the only right answer;
+# failing makes the first run on every new host a coin toss.
+APT_LOCK_WAIT=600
+
+# apt/dpkg print hundreds of lines that bury this script's own warnings. Keep
+# their output and show it only if they fail.
+quietly() { # description cmd...
+  local what="$1" out; shift
+  out="$("$@" 2>&1)" || { echo "$out" >&2; die "$what failed"; }
+}
+
+apt_update() {
+  # DPkg::Lock::Timeout makes `apt-get install` wait for the lock, but not
+  # `apt-get update` (apt 2.8), which fails at once. So update waits here.
+  local waited=0 out
+  until out="$(apt-get -q update 2>&1)"; do
+    case "$out" in
+      *"Could not get lock"*|*"Unable to lock"*) ;;
+      *) echo "$out" >&2; die "apt-get update failed" ;;
+    esac
+    [ "$waited" -lt "$APT_LOCK_WAIT" ] || { echo "$out" >&2; die "apt is still locked after ${APT_LOCK_WAIT}s"; }
+    [ "$waited" -gt 0 ] || say "apt is busy (another update is running); waiting up to $((APT_LOCK_WAIT / 60)) min"
+    sleep 5; waited=$((waited + 5))
+  done
+}
+
 install_packages() {
   case "$family" in
     debian)
       export DEBIAN_FRONTEND=noninteractive
-      apt-get update -y
-      apt-get install -y "$@"
+      apt_update
+      quietly "installing $*" apt-get -q -y -o DPkg::Lock::Timeout="$APT_LOCK_WAIT" install "$@"
       ;;
   esac
 }
@@ -200,6 +227,24 @@ EOF
     fi
   fi
 fi
+
+# What the host looks like now, read back from the system rather than echoed
+# from what this script meant to do.
+summary() {
+  local pw
+  echo "--- [harden] this host now"
+  if ufw status 2>/dev/null | grep -q '^Status: active'; then
+    echo "firewall   on, inbound allowed only to:"
+    ufw status | awk '/ALLOW/ {printf "             %s\n", $0}'
+  else
+    echo "firewall   OFF"
+  fi
+  echo "updates    unattended-upgrades $(systemctl is-active unattended-upgrades 2>/dev/null || true)"
+  echo "fail2ban   $(systemctl is-active fail2ban 2>/dev/null || true)"
+  pw="$(sshd_as | awk '$1 == "passwordauthentication" {print $2}')"
+  echo "ssh        password login $([ "$pw" = "no" ] && echo off || echo ON)"
+}
+summary
 
 if [ "$problems" -gt 0 ]; then
   echo "!! [harden] finished with $problems problem(s) above — this host is NOT fully hardened" >&2
