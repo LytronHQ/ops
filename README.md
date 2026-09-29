@@ -86,6 +86,8 @@ A release is every script as a flat asset, `ops-get`, and the `SHA256SUMS` that
 consumer pins a version or does not run at all.
 
 Script filenames must be unique across the whole repo, since assets are flat.
+Anything under a `tests/` directory is never an asset. Working on the repo —
+module shape, tests — is in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 `.github/workflows/release.yml` does all of this when a `v*` tag is pushed. When
 Actions is unavailable, build the same thing locally from a clean checkout of
@@ -95,10 +97,11 @@ the tag:
 for f in $(find . -name '*.sh' -not -path './.git/*') ops-get; do
   sh -n "$f" 2>/dev/null || bash -n "$f" || echo "does not parse: $f"
 done
-find . -mindepth 2 -name '*.sh' -not -path './.git/*' -printf '%f\n' | sort | uniq -d   # must print nothing
+./run-tests
+find . -mindepth 2 -name '*.sh' -not -path './.git/*' -not -path '*/tests/*' -printf '%f\n' | sort | uniq -d   # must print nothing
 
 rm -rf dist && mkdir dist
-find . -mindepth 2 -name '*.sh' -not -path './.git/*' -not -path './dist/*' -exec cp {} dist/ \;
+find . -mindepth 2 -name '*.sh' -not -path './.git/*' -not -path './dist/*' -not -path '*/tests/*' -exec cp {} dist/ \;
 cp ops-get dist/
 (cd dist && sha256sum * > SHA256SUMS)
 gh release create vX.Y.Z dist/* --verify-tag --title vX.Y.Z --notes "..."
