@@ -16,7 +16,9 @@ route to document or to forget to verify. Cloning the repo is for working on
 it, not for using it.
 
 Each module is a folder with its own README: what its scripts do, every
-parameter, and what it changes on the machine. This page is about `ops-get`.
+option, and what it changes on the machine. Every input is a flag, and `--help`
+lists them. This page is about `ops-get`; how the repo is built and why is in
+[CONTRIBUTING.md](CONTRIBUTING.md) and [DECISIONS.md](DECISIONS.md).
 
 ## ops-get
 
