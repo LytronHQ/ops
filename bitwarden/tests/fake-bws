@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# fake-bws — stands in for Bitwarden's `bws` CLI, first on PATH in
+# bws-env_test.sh, so the real bws-env.sh runs against known projects.
+#
+# Serves `bws secret list <project> --output json` from $FAKE_BWS_DIR/<project>.json.
+# Checks the access token arrives in BWS_ACCESS_TOKEN and matches
+# $FAKE_BWS_DIR/token, as the real one would reject a wrong one. Records every
+# argv and the server URL it was given, so the test can check what it was not
+# given.
+set -euo pipefail
+dir="${FAKE_BWS_DIR:?}"
+printf '%s\n' "$*" >> "$dir/argv.log"
+printf '%s\n' "${BWS_SERVER_URL:-}" >> "$dir/server.log"
+[ "${BWS_ACCESS_TOKEN:-}" = "$(cat "$dir/token")" ] || { echo "Error: invalid access token" >&2; exit 1; }
+[ "${1:-}" = secret ] && [ "${2:-}" = list ] || { echo "fake-bws: unsupported: $*" >&2; exit 2; }
+f="$dir/${3:-}.json"
+[ -f "$f" ] || { echo "Error: Resource not found" >&2; exit 1; }
+cat "$f"
