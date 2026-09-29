@@ -54,7 +54,7 @@ image.
 |---|---|---|
 | `VMLAB_KEY` | `~/.ssh/id_rsa` | path to your **private** key. It authorises the matching `.pub` inside the VMs, so this is the key you will connect with |
 | `VMLAB_USER` | `dev` | login user created inside each VM |
-| `VMLAB_PREFIX` | `mon-lab-` | prefix for VM names, so a lab does not collide with your other VMs |
+| `VMLAB_PREFIX` | `vmlab-` | prefix for VM names, so a lab does not collide with your other VMs |
 | `VMLAB_IMAGE` | Ubuntu 24.04 cloud image | URL of the base image. Downloaded once, then cached |
 | `VMLAB_DIR` | `/var/tmp/vmlab` | where disks live. Must be readable by the qemu user — **not** under a `0750` home directory |
 
@@ -108,11 +108,11 @@ Power a group on or off together, so a lab does not sit using memory.
 | Argument | Default | Meaning |
 |---|---|---|
 | `up` \| `down` \| `status` | `status` | start them, shut them down gracefully, or list name, state and memory |
-| `[prefix]` | `mon-` | only act on VMs whose name starts with this, leaving others alone |
+| `[prefix]` | `vmlab-` | only act on VMs whose name starts with this, leaving others alone. The default matches a lab made by `create-vm.virsh.sh` |
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `VM_PREFIX` | `mon-` | same as the positional prefix, for when the caller is a script |
+| `VM_PREFIX` | `vmlab-` | same as the positional prefix, for when the caller is a script |
 
 On `up` it starts anything matching `*db*` first, since the rest usually depend
 on it.

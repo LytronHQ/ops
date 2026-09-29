@@ -13,8 +13,8 @@
 # SSH. That keeps it a clean base you then deploy onto.
 #
 # Usage:
-#   deploy/vm/create-vm.virt-manager.sh \
-#     --name mon-eu --user dev \
+#   ./create-vm.virt-manager.sh \
+#     --name web-1 --user dev \
 #     --image https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-amd64.img \
 #     --cpu 2 --ram 2048 --disk 20
 #
@@ -193,15 +193,6 @@ if [ -n "$IP" ]; then
 VM '$NAME' is up.
   IP:   $IP
   SSH:  ssh ${SSH_KEY_OPT}$USER_NAME@$IP        (key-only; keys from lp:$LAUNCHPAD)
-
-Deploy onto it: set up deploy/dev.env (copy deploy/dev.env.example — it also
-needs SSH_KEY, PB_URL and the worker PB creds), with:
-  SSH_USER=$USER_NAME
-  SSH_KEY=<the private key whose pubkey is on lp:$LAUNCHPAD>
-  NODES="
-  worker $IP eu
-  "
-then: deploy onto the printed IPs
 
 (Headless VM — virt-manager's graphical console stays black by design;
  use 'virsh console $NAME' for a terminal, Ctrl-] to exit.)

@@ -4,8 +4,8 @@
 # force it off, undefine it, and delete its disks (the qcow2 + the cloud-init seed).
 # Part of the create-vm.<provider>.<ext> family — same provider suffix, opposite verb.
 #
-#   ./destroy-vm.virt-manager.sh mon-w-eu
-#   ./destroy-vm.virt-manager.sh --name mon-w-eu --yes    # no prompt
+#   ./destroy-vm.virt-manager.sh web-1
+#   ./destroy-vm.virt-manager.sh --name web-1 --yes    # no prompt
 set -euo pipefail
 
 CONN="qemu:///system"
