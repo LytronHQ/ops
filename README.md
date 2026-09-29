@@ -3,14 +3,18 @@
 Scripts for the boring parts of running a machine. Each one is a single
 self-contained file with no imports and nothing about my projects baked in.
 
-| Module | What it does | Runs on | Get it by |
-|---|---|---|---|
-| [`harden/`](harden/) | firewall, auto-updates, fail2ban, key-only SSH | the server you are configuring | `ops-get` |
-| [`vmlab/`](vmlab/) | throwaway libvirt VMs, with or without sudo | your own machine | `git clone` |
+| Module | What it does | Runs on |
+|---|---|---|
+| [`harden/`](harden/) | firewall, auto-updates, fail2ban, key-only SSH | the server you are configuring |
+| [`vmlab/`](vmlab/) | throwaway libvirt VMs, with or without sudo | your own machine |
+
+Every script is fetched the same way, whichever machine it runs on: `ops-get`
+downloads it from a pinned release and verifies its checksum. There is no second
+route to document or to forget to verify. Cloning the repo is for working on
+it, not for using it.
 
 Each module is a folder with its own README: what its scripts do, every
-parameter, and what it changes on the machine. This page is about `ops-get`,
-which is how a module gets onto a server in the first place.
+parameter, and what it changes on the machine. This page is about `ops-get`.
 
 ## ops-get
 
