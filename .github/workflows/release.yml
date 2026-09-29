@@ -1,0 +1,39 @@
+name: release
+
+# A tag is the unit of distribution: it publishes every script as a release
+# asset alongside a SHA256SUMS that ops-get verifies against. Nothing is
+# consumable from a branch on purpose — a consumer pins a version or does not
+# run at all.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check every script parses
+        run: |
+          fail=0
+          for f in $(find . -name '*.sh' -not -path './.git/*') ops-get; do
+            sh -n "$f" 2>/dev/null || bash -n "$f" || { echo "::error::$f does not parse"; fail=1; }
+          done
+          exit $fail
+
+      - name: Collect assets and checksum them
+        run: |
+          mkdir -p dist
+          # Flat asset names: a consumer asks for `harden.sh`, not a path.
+          find remote local -name '*.sh' -exec cp {} dist/ \;
+          cp ops-get dist/
+          cd dist && sha256sum * > SHA256SUMS && cat SHA256SUMS
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
