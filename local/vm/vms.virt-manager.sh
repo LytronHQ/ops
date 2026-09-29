@@ -4,10 +4,10 @@
 # so you can free their RAM when you're not using them. Acts on every VM whose
 # name starts with the prefix (default "mon-"), leaving unrelated VMs alone.
 #
-#   deploy/vm/vms.virt-manager.sh up        # start them all (skips already-running)
-#   deploy/vm/vms.virt-manager.sh down      # graceful shutdown of the running ones
-#   deploy/vm/vms.virt-manager.sh status    # name · state · RAM
-#   deploy/vm/vms.virt-manager.sh down mon-w-   # only VMs matching a custom prefix
+#   ./vms.virt-manager.sh up        # start them all (skips already-running)
+#   ./vms.virt-manager.sh down      # graceful shutdown of the running ones
+#   ./vms.virt-manager.sh status    # name · state · RAM
+#   ./vms.virt-manager.sh down mon-w-   # only VMs matching a custom prefix
 #
 # Env: VM_PREFIX overrides the default "mon-".
 set -euo pipefail

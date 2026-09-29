@@ -59,63 +59,134 @@ it executes. On your laptop a clone is simpler and you get all of them at once.
 
 ## Reference
 
-### harden.sh
-
-```sh
-sudo ./harden.sh
-```
-
-| Variable | Does |
-|---|---|
-| `HARDEN_ALLOW` | extra inbound rules: `"<source>:<port>[/proto]"`, space or comma separated |
-| `HARDEN_SKIP` | steps to skip: any of `firewall updates fail2ban ssh` |
-| `HARDEN_SSH_TAG` | name for the sshd drop-in file (default `hardening`) |
-
-It disables **password** SSH only — key login keeps working. The change is
-written as a drop-in, checked with `sshd -t`, and **removed again if that check
-fails**, then reloaded rather than restarted. So a mistake cannot lock you out of
-the machine you are hardening, and the session you are running it from is never
-dropped.
-
-### create-vm.virsh.sh
-
-```sh
-./create-vm.virsh.sh up|ips|status|down
-```
-
-| Variable | Does |
-|---|---|
-| `VMLAB_KEY` | ssh key to authorise (default `~/.ssh/id_rsa`) |
-| `VMLAB_USER` | login user to create (default `dev`) |
-| `VMLAB_PREFIX` | VM name prefix (default `mon-lab-`) |
-| `VMLAB_IMAGE` | cloud image URL |
-| `VMLAB_DIR` | where disks live (default `/var/tmp/vmlab`) |
-
-Edit the `VMS` array at the top to change how many VMs and their sizes.
-
-### create-vm.virt-manager.sh and friends
-
-The same idea for people who do have `virt-install` and sudo: create one
-production-shaped VM, destroy it, or power a group on and off together.
+Every script takes its settings one of two ways: **environment variables** (the
+ones extracted from a deployment, where the caller is another script) or
+**flags** (the ones you type by hand). Which is which is noted below.
 
 ### ops-get
 
 ```sh
 ops-get <script> <version> [destination]
+ops-get harden.sh v1.0.0 /tmp/harden.sh
 ```
 
-Needs `curl` or `wget` plus `sha256sum`. It downloads the script and the
-release's `SHA256SUMS`, compares them, and only then writes the file.
+| Argument | Required | Meaning |
+|---|---|---|
+| `<script>` | yes | the asset filename, e.g. `harden.sh`. No path — release assets are flat |
+| `<version>` | yes | a release tag, e.g. `v1.0.0`. There is no "latest" on purpose |
+| `[destination]` | no | where to write it. Default: `./<script>` |
 
-It refuses, leaving nothing behind, when: the release has no `SHA256SUMS`, the
-script is not listed in it, or the hash does not match. A provisioning run that
-stops loudly beats one that quietly configures a host with the wrong bytes.
+| Variable | Default | Meaning |
+|---|---|---|
+| `OPS_REPO` | `LytronHQ/ops` | which repository's releases to fetch from — point it at your fork |
+| `OPS_BASE_URL` | GitHub releases | the whole base URL, for a mirror or an air-gapped copy |
 
-`OPS_BASE_URL` points it at a mirror or an air-gapped copy instead of GitHub.
+Needs `curl` or `wget`, plus `sha256sum` or `shasum`.
 
-The repo has to be public for this to work. Fetching from a private release
-needs a token, and putting a GitHub token on every host you are about to harden
-trades one problem for a worse one.
+### remote/harden.sh
+
+Run as root on the host being hardened. Settings are environment variables,
+because the usual caller is a provisioning script.
+
+```sh
+sudo ./harden.sh
+sudo HARDEN_ALLOW="10.0.0.0/16:5432" ./harden.sh
+```
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `HARDEN_ALLOW` | none | extra inbound rules to allow, as `<source>:<port>[/proto]`. Space or comma separated, so `"10.0.0.0/16:5432 192.168.1.0/24:8090/tcp"` is two rules. Protocol defaults to `tcp`. Everything not listed here, other than SSH, is denied |
+| `HARDEN_SKIP` | none | steps to leave alone, space separated. Any of `firewall`, `updates`, `fail2ban`, `ssh`. Use it when one of them is managed elsewhere |
+| `HARDEN_SSH_TAG` | `hardening` | names the file it writes to `/etc/ssh/sshd_config.d/10-<tag>.conf`. Change it if something else on the host already uses that name |
+
+Rerunning it is safe: every step is idempotent.
+
+### local/vm/create-vm.virsh.sh
+
+A whole disposable lab, no sudo. Takes a command, and environment variables for
+the rest.
+
+```sh
+./create-vm.virsh.sh up
+VMLAB_PREFIX=test- VMLAB_USER=me ./create-vm.virsh.sh up
+```
+
+| Command | Does |
+|---|---|
+| `up` | create and boot every VM, wait for DHCP, print the addresses |
+| `ips` | print name and address for each |
+| `status` | name, power state, address |
+| `down` | destroy, undefine, delete the disks, forget the SSH host keys |
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `VMLAB_KEY` | `~/.ssh/id_rsa` | path to your **private** key. It authorises the matching `.pub` inside the VMs, so this is the key you will connect with |
+| `VMLAB_USER` | `dev` | login user created inside each VM |
+| `VMLAB_PREFIX` | `mon-lab-` | prefix for VM names, so a lab does not collide with your other VMs |
+| `VMLAB_IMAGE` | Ubuntu 24.04 cloud image | URL of the base image. Downloaded once and cached |
+| `VMLAB_DIR` | `/var/tmp/vmlab` | where the disks live. Must be somewhere the qemu user can read — not under a `0750` home directory |
+
+How many VMs and how big is the `VMS` array at the top of the file:
+`name:ram_mb:vcpu`, one per line. The default is four small ones.
+
+### local/vm/create-vm.virt-manager.sh
+
+One production-shaped VM. **Needs `virt-install` and sudo**, unlike the script
+above. Takes flags, because you run it by hand.
+
+```sh
+./create-vm.virt-manager.sh --name web-1 --user dev \
+  --image https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-amd64.img
+```
+
+| Flag | Required | Default | Meaning |
+|---|---|---|---|
+| `--name` | yes | — | VM name, also its hostname |
+| `--user` | yes | — | login user to create |
+| `--image` | yes | — | a local path, or an https URL to an Ubuntu **cloud** image. URLs are cached after the first download |
+| `--launchpad` | no | same as `--user` | **Launchpad id to import SSH keys from.** This is the main difference from the script above, which uses a local key file instead |
+| `--cpu` | no | `2` | vCPUs |
+| `--ram` | no | `2048` | memory in MB |
+| `--disk` | no | `20` | disk in GB |
+| `--os-variant` | no | `ubuntu24.04` | libvirt osinfo id; see `osinfo-query os` |
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `IMAGES_DIR` | `/var/lib/libvirt/images` | where the disk and seed are written. Root-owned, which is why this one needs sudo |
+| `LIBVIRT_NETWORK` | `default` | libvirt network to attach to |
+
+### local/vm/destroy-vm.virt-manager.sh
+
+```sh
+./destroy-vm.virt-manager.sh web-1
+./destroy-vm.virt-manager.sh --name web-1 --yes
+```
+
+| Argument | Meaning |
+|---|---|
+| `<name>` or `--name <name>` | which VM to remove: force it off, undefine it, delete its disk and seed |
+| `--yes` | skip the confirmation prompt |
+
+### local/vm/vms.virt-manager.sh
+
+Power a group of VMs on or off together, so a lab does not sit using memory.
+
+```sh
+./vms.virt-manager.sh up
+./vms.virt-manager.sh down web-
+```
+
+| Argument | Default | Meaning |
+|---|---|---|
+| `up` \| `down` \| `status` | `status` | start them, shut them down gracefully, or list name, state and memory |
+| `[prefix]` | `mon-` | only act on VMs whose name starts with this, leaving others alone |
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `VM_PREFIX` | `mon-` | same as the positional prefix, for when the caller is a script |
+
+On `up` it starts anything matching `*db*` first, since the rest usually depend
+on it.
 
 ## Notes for anyone reading the source
 
