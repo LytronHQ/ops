@@ -12,7 +12,7 @@ and `jq`, and a machine-account access token with read access to the projects.
 ## Get it
 
 ```sh
-./ops-get bws-env.sh v2.0.0
+./ops-get bws-env.sh v3.0.0
 ```
 
 ## Use it

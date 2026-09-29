@@ -26,33 +26,40 @@ A fresh server has `curl` and little else. `ops-get` fetches one script from a
 pinned release and verifies it before it ever runs.
 
 ```sh
-curl -fsSL https://github.com/LytronHQ/ops/releases/download/v2.0.0/ops-get -o ops-get
-echo "4609e46737242a91b3d17c049d0d64ae91dd01d2f04c6bcb9913d446deca9450  ops-get" | sha256sum -c
+curl -fsSL https://github.com/LytronHQ/ops/releases/download/v3.0.0/ops-get -o ops-get
+echo "ba1bf095a506f25a973847dc4be500a3482d4ec240842c130d658d412d2b8b8b  ops-get" | sha256sum -c
 chmod +x ops-get
 
-./ops-get harden.sh v2.0.0 /tmp/harden.sh
+./ops-get --list v3.0.0                    # what this version has
+./ops-get harden.sh v3.0.0 /tmp/harden.sh
 sudo /tmp/harden.sh
 ```
 
 The second line checks `ops-get` itself against the hash printed here, before
 it runs. Everything after that, `ops-get` checks for you.
 
-### Arguments
+### Usage
 
 ```sh
 ops-get <script> <version> [destination]
+ops-get --list <version>
 ```
 
 | Argument | Required | Meaning |
 |---|---|---|
 | `<script>` | yes | the asset filename, e.g. `harden.sh`. No path — release assets are flat |
-| `<version>` | yes | a release tag, e.g. `v2.0.0`. There is deliberately no "latest" |
+| `<version>` | yes | a release tag, e.g. `v3.0.0`. There is deliberately no "latest" |
 | `[destination]` | no | where to write it. Default: `./<script>` |
 
-| Variable | Default | Meaning |
+| Flag | Default | Meaning |
 |---|---|---|
-| `OPS_REPO` | `LytronHQ/ops` | whose releases to fetch from — point it at your fork |
-| `OPS_BASE_URL` | GitHub releases | the whole base URL, for a mirror or an air-gapped copy |
+| `--list <version>` | | print the scripts in that version — the ones its `SHA256SUMS` vouches for |
+| `--repo <owner/name>` | `LytronHQ/ops` | whose releases to fetch from — point it at your fork |
+| `--base-url <url>` | GitHub releases | the whole release URL, for a mirror or an air-gapped copy |
+| `-h`, `--help` | | print usage; so does running it with no arguments |
+
+Nothing is read from the environment. Before v3.0.0 the last two were the
+`OPS_REPO` and `OPS_BASE_URL` variables; they are no longer read.
 
 Needs `curl` or `wget`, plus `sha256sum` or `shasum`. It is POSIX `sh`, because
 it is the first thing that runs on a new host and cannot afford a dependency.
@@ -64,9 +71,10 @@ only then writes the file.
 
 It refuses, leaving nothing behind, when:
 
-- the release has no `SHA256SUMS`
-- the script is not listed in it
-- the hash does not match
+- the version's `SHA256SUMS` cannot be fetched — the version does not exist,
+  or was published minutes ago and is not served yet, or has no checksums
+- the script is not listed in it; the error names the scripts that are
+- the hash does not match; the error prints both
 
 A provisioning run that stops loudly beats one that quietly configures a host
 with the wrong bytes.

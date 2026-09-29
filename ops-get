@@ -2,8 +2,17 @@
 #
 # ops-get — fetch one script from a pinned release of this repo and verify it.
 #
-#   ops-get <script> <version> [dest]
-#   ops-get harden.sh v1.0.0 /tmp/harden.sh
+#   ops-get <script> <version> [dest]      fetch, verify, write to dest (default ./<script>)
+#   ops-get --list <version>               the scripts in that version
+#
+#   ops-get harden.sh v3.0.0 /tmp/harden.sh
+#
+# Options — every input is one; nothing is read from the environment:
+#   --list <version>    list the scripts in a version, from its SHA256SUMS
+#   --repo <owner/name> whose releases to use (default LytronHQ/ops): a fork
+#   --base-url <url>    the whole release URL, for a mirror, an air-gapped copy,
+#                       or a test serving a deliberately corrupted file
+#   -h, --help          this text
 #
 # There is no package manager worth the weight for a handful of shell scripts on
 # a fresh Ubuntu box, so this is the smallest thing with the properties you
@@ -18,32 +27,76 @@
 # promised, and it is the first thing to run.
 set -eu
 
-REPO="${OPS_REPO:-LytronHQ/ops}"
-SCRIPT="${1:?usage: ops-get <script> <version> [dest]}"
-VERSION="${2:?usage: ops-get <script> <version> [dest]}"
-DEST="${3:-./$SCRIPT}"
-# Overridable for a mirror, an air-gapped copy, or a test that needs to serve a
-# deliberately corrupted file and prove this refuses it.
-BASE="${OPS_BASE_URL:-https://github.com/${REPO}/releases/download/${VERSION}}"
+die() { echo "ops-get: $*" >&2; exit 1; }
+usage() { sed -n '3,/^set -eu/p' "$0" | sed '$d; s/^# \{0,1\}//'; }
+
+REPO="LytronHQ/ops" BASE="" LIST=""
+SCRIPT="" VERSION="" DEST="" n=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --*=*) opt="${1%%=*}" val="${1#*=}"; shift; set -- "$opt" "$val" "$@" ;;
+  esac
+  case "$1" in
+    --list|--repo|--base-url)
+      [ $# -ge 2 ] && [ -n "$2" ] || die "$1 needs a value (try --help)" ;;
+  esac
+  case "$1" in
+    --list)     LIST=1; VERSION="$2"; shift 2 ;;
+    --repo)     REPO="$2"; shift 2 ;;
+    --base-url) BASE="$2"; shift 2 ;;
+    -h|--help)  usage; exit 0 ;;
+    -*)         die "unknown option '$1' (try --help)" ;;
+    *)          n=$((n + 1))
+                case "$n" in
+                  1) SCRIPT="$1" ;; 2) VERSION="$1" ;; 3) DEST="$1" ;;
+                  *) die "too many arguments (try --help)" ;;
+                esac
+                shift ;;
+  esac
+done
+
+if [ -z "$LIST" ]; then
+  # With nothing to do, show how to use it rather than an error.
+  [ -n "$SCRIPT" ] || { usage >&2; exit 1; }
+  [ -n "$VERSION" ] || die "which version? ops-get $SCRIPT <version>   (see: ops-get --list <version>)"
+  case "$SCRIPT" in */*) die "'$SCRIPT': a script name, not a path — release assets are flat" ;; esac
+fi
+DEST="${DEST:-./$SCRIPT}"
+BASE="${BASE:-https://github.com/${REPO}/releases/download/${VERSION}}"
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
 fetch() { # url out
-  if command -v curl >/dev/null 2>&1; then curl -fsSL "$1" -o "$2"
+  if command -v curl >/dev/null 2>&1; then curl -fsSL "$1" -o "$2" 2>/dev/null
   elif command -v wget >/dev/null 2>&1; then wget -qO "$2" "$1"
-  else echo "ops-get: need curl or wget" >&2; exit 1; fi
+  else die "need curl or wget"; fi
 }
 
-fetch "${BASE}/${SCRIPT}"    "$tmp/$SCRIPT"   || { echo "ops-get: no $SCRIPT in $VERSION of $REPO" >&2; exit 1; }
-fetch "${BASE}/SHA256SUMS"   "$tmp/SHA256SUMS" || { echo "ops-get: $VERSION has no SHA256SUMS — refusing to run unverified code" >&2; exit 1; }
+# SHA256SUMS first: it is both the proof and the table of contents. If it is
+# not there, nothing else in the release can be trusted — and "no such script"
+# would be the wrong thing to say when the whole version is missing. That is
+# also what a release published minutes ago looks like, before GitHub serves it.
+fetch "${BASE}/SHA256SUMS" "$tmp/SHA256SUMS" \
+  || die "cannot get SHA256SUMS for $VERSION of $REPO. Either that version does not exist, it is still being published (a new release can take a few minutes to appear), or it has no checksums. Nothing was fetched."
+
+# Every asset the release vouches for, except the checksum file itself.
+scripts() { awk '{ f = $2; sub(/^\*/, "", f); if (f != "SHA256SUMS") print f }' "$tmp/SHA256SUMS"; }
+
+if [ -n "$LIST" ]; then
+  scripts
+  exit 0
+fi
 
 want="$(awk -v f="$SCRIPT" '$2 == f || $2 == "*"f {print $1}' "$tmp/SHA256SUMS" | head -1)"
-[ -n "$want" ] || { echo "ops-get: $SCRIPT is not listed in SHA256SUMS for $VERSION" >&2; exit 1; }
+[ -n "$want" ] || die "$SCRIPT is not in $VERSION. It has: $(scripts | tr '\n' ' ')"
+
+fetch "${BASE}/${SCRIPT}" "$tmp/$SCRIPT" \
+  || die "$SCRIPT is listed in $VERSION's SHA256SUMS but could not be downloaded from ${BASE}/${SCRIPT}"
 
 if command -v sha256sum >/dev/null 2>&1; then got="$(sha256sum "$tmp/$SCRIPT" | awk '{print $1}')"
 elif command -v shasum >/dev/null 2>&1; then got="$(shasum -a 256 "$tmp/$SCRIPT" | awk '{print $1}')"
-else echo "ops-get: need sha256sum or shasum" >&2; exit 1; fi
+else die "need sha256sum or shasum"; fi
 
 [ "$want" = "$got" ] || { echo "ops-get: CHECKSUM MISMATCH for $SCRIPT@$VERSION" >&2
                           echo "  expected $want" >&2; echo "  got      $got" >&2; exit 1; }
