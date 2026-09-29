@@ -5,29 +5,37 @@
 # tokens that policy admits. Idempotent; safe to re-run. Replaces the dashboard
 # walkthrough.
 #
-#   CF_API_TOKEN=… CF_ACCOUNT_ID=… ACCESS_HOSTNAME=api.example.com \
-#   ACCESS_TOKENS="ci backup" ./cf-access.sh
+#   ./cf-access.sh --hostname api.example.com --account-id <id> \
+#     --api-token-file ~/.config/cloudflare/token --token ci --token backup
 #
-# Token permissions: Access: Apps and Policies Write + Access: Service Tokens
+#   # in CI, the secret on stdin:
+#   printf '%s' "$CF_API_TOKEN" | ./cf-access.sh --api-token-file - …
+#
+# The API token needs Access: Apps and Policies Write + Access: Service Tokens
 # Edit (both account-level).
 #
-# Prints, on stdout, for each token in ACCESS_TOKENS:
+# Prints, on stdout, for each --token:
 #   CF_ACCESS_CLIENT_ID_<NAME>=…
 #   CF_ACCESS_CLIENT_SECRET_<NAME>=…   ONLY when this run created or rotated it
 # <NAME> is the token name upper-cased, anything not A-Z0-9 turned into _.
 # Cloudflare returns a secret exactly once, at creation, so a re-run cannot
 # reprint it: store what you see. Everything else goes to stderr.
 #
-# Env:
-#   CF_API_TOKEN, CF_ACCOUNT_ID, ACCESS_HOSTNAME   required
-#   ACCESS_TOKENS        service token names this run manages, space separated;
-#                        created if missing (default "<app name>-client")
-#   ACCESS_ROTATE        which of them to rotate: a new secret, and the old one
-#                        stops working immediately
-#   ACCESS_APP_NAME      application name (default: the hostname)
-#   ACCESS_POLICY_NAME   policy name (default "service-tokens")
-#   ACCESS_SESSION       session duration (default "24h")
-#   CF_API_BASE          API base URL, for tests (default Cloudflare's)
+# Options — every input is one; nothing is read from the environment:
+#   --hostname <host>        the hostname to protect (required)
+#   --account-id <id>        Cloudflare account id (required)
+#   --api-token-file <path>  file holding the API token, or - for stdin
+#                            (required). A file, never a value: argv is
+#                            readable by every user through ps.
+#   --token <name>           a service token this run manages, created if
+#                            missing; repeatable (default "<app name>-client")
+#   --rotate <name>          rotate one of the --token names: a new secret, and
+#                            the old one stops working immediately; repeatable
+#   --app-name <name>        application name (default: the hostname)
+#   --policy-name <name>     policy name (default "service-tokens")
+#   --session <duration>     application session duration (default "24h")
+#   --api-base <url>         API base URL (default Cloudflare's; tests use a stub)
+#   -h, --help               this text
 #
 # Tokens already in the policy but not named in this run are KEPT, as long as
 # they still exist. So each consumer can manage its own token from wherever its
@@ -41,41 +49,66 @@ set -euo pipefail
 # on with an empty token id. Found by the test that makes a mint fail.
 shopt -s inherit_errexit
 
-: "${CF_API_TOKEN:?set CF_API_TOKEN (Access Apps and Policies Write + Service Tokens Edit)}"
-: "${CF_ACCOUNT_ID:?set CF_ACCOUNT_ID}"
-: "${ACCESS_HOSTNAME:?set ACCESS_HOSTNAME (e.g. api.example.com)}"
-APP_NAME="${ACCESS_APP_NAME:-$ACCESS_HOSTNAME}"
-POLICY_NAME="${ACCESS_POLICY_NAME:-service-tokens}"
-SESSION="${ACCESS_SESSION:-24h}"
+log() { echo "$*" >&2; }
+die() { echo "error: $*" >&2; exit 1; }
+usage() { sed -n '3,/^set -euo/p' "$0" | sed '$d; s/^# \{0,1\}//'; }
+
+HOSTNAME_="" ACCOUNT_ID="" TOKEN_FILE="" APP_NAME="" POLICY_NAME="service-tokens"
+SESSION="24h" API="https://api.cloudflare.com/client/v4" TOKENS=() ROTATE=()
+while [ $# -gt 0 ]; do
+  case "$1" in --*=*) set -- "${1%%=*}" "${1#*=}" "${@:2}" ;; esac
+  case "$1" in
+    --hostname|--account-id|--api-token-file|--token|--rotate|--app-name|--policy-name|--session|--api-base)
+      [ $# -ge 2 ] && [ -n "$2" ] || die "$1 needs a value (try --help)" ;;
+  esac
+  case "$1" in
+    --hostname)       HOSTNAME_="$2"; shift 2 ;;
+    --account-id)     ACCOUNT_ID="$2"; shift 2 ;;
+    --api-token-file) TOKEN_FILE="$2"; shift 2 ;;
+    --token)          TOKENS+=("$2"); shift 2 ;;
+    --rotate)         ROTATE+=("$2"); shift 2 ;;
+    --app-name)       APP_NAME="$2"; shift 2 ;;
+    --policy-name)    POLICY_NAME="$2"; shift 2 ;;
+    --session)        SESSION="$2"; shift 2 ;;
+    --api-base)       API="$2"; shift 2 ;;
+    -h|--help)        usage; exit 0 ;;
+    *)                die "unknown argument '$1' (try --help)" ;;
+  esac
+done
+[ -n "$HOSTNAME_" ]  || die "--hostname is required (e.g. api.example.com)"
+[ -n "$ACCOUNT_ID" ] || die "--account-id is required"
+[ -n "$TOKEN_FILE" ] || die "--api-token-file is required (a file, or - for stdin)"
+APP_NAME="${APP_NAME:-$HOSTNAME_}"
 # Default derives from the application, so two applications never share a
 # token by accident. They used to, where this came from: a secret is retrievable
 # only at creation, so the second application found the first one's token,
 # reused it, stored a client id with no secret, and could not authenticate —
 # while rotating it to fix one silently broke the other.
-read -r -a TOKENS <<<"${ACCESS_TOKENS:-${APP_NAME}-client}"
-read -r -a ROTATE <<<"${ACCESS_ROTATE:-}"
+[ "${#TOKENS[@]}" -gt 0 ] || TOKENS=("${APP_NAME}-client")
+for r in "${ROTATE[@]}"; do
+  case " ${TOKENS[*]} " in *" $r "*) ;; *) die "--rotate '$r' is not one of the --token names" ;; esac
+done
 
-# Overridable so tests/cf-access_test.sh can point it at a stub API and run
-# the real script rather than a copy of its logic.
-API="${CF_API_BASE:-https://api.cloudflare.com/client/v4}"
-log() { echo "$*" >&2; }
-die() { echo "error: $*" >&2; exit 1; }
+if [ "$TOKEN_FILE" = "-" ]; then
+  API_TOKEN="$(cat)"
+else
+  [ -r "$TOKEN_FILE" ] || die "--api-token-file: cannot read $TOKEN_FILE"
+  API_TOKEN="$(cat "$TOKEN_FILE")"
+fi
+API_TOKEN="${API_TOKEN%%[[:space:]]}"
+[ -n "$API_TOKEN" ] || die "--api-token-file: $TOKEN_FILE is empty"
+
 command -v jq >/dev/null || die "missing jq"
 command -v curl >/dev/null || die "missing curl"
 
-[ "${#TOKENS[@]}" -gt 0 ] || die "ACCESS_TOKENS is empty"
-for r in "${ROTATE[@]}"; do
-  case " ${TOKENS[*]} " in *" $r "*) ;; *) die "ACCESS_ROTATE names '$r', which is not in ACCESS_TOKENS" ;; esac
-done
-
 cf() {
-  local method="$1" path="$2" body="${3:-}" out
-  if [ -n "$body" ]; then
-    out="$(curl -sS -X "$method" "$API$path" -H "Authorization: Bearer $CF_API_TOKEN" \
-      -H 'Content-Type: application/json' -d "$body")"
-  else
-    out="$(curl -sS -X "$method" "$API$path" -H "Authorization: Bearer $CF_API_TOKEN")"
-  fi
+  local method="$1" path="$2" body="${3:-}" out args=()
+  [ -z "$body" ] || args=(-H 'Content-Type: application/json' -d "$body")
+  # The token goes to curl through a file descriptor (-H @file), not as an
+  # argument: `-H "Authorization: Bearer …"` put it in curl's argv, readable by
+  # every user through ps for as long as each request ran.
+  out="$(curl -sS -X "$method" "$API$path" \
+    -H @<(printf 'Authorization: Bearer %s\n' "$API_TOKEN") "${args[@]}")"
   jq -e '.success == true' >/dev/null <<<"$out" \
     || die "Cloudflare API $method $path: $(jq -c '.errors // .' <<<"$out" 2>/dev/null || echo "$out")"
   echo "$out"
@@ -103,7 +136,7 @@ on_exit() {
 trap on_exit EXIT
 
 # --- service tokens ----------------------------------------------------------
-ALL_TOKENS="$(cf GET "/accounts/${CF_ACCOUNT_ID}/access/service_tokens")"
+ALL_TOKENS="$(cf GET "/accounts/${ACCOUNT_ID}/access/service_tokens")"
 
 # ensure_token NAME ROTATE -> "<token_id> <client_id> <client_secret>"; the
 # secret is empty when an existing token was reused.
@@ -112,14 +145,14 @@ ensure_token() {
   id="$(jq -r --arg n "$name" '.result[] | select(.name==$n) | .id' <<<"$ALL_TOKENS" | head -1)"
   if [ -z "$id" ]; then
     log "==> creating service token $name"
-    res="$(cf POST "/accounts/${CF_ACCOUNT_ID}/access/service_tokens" \
+    res="$(cf POST "/accounts/${ACCOUNT_ID}/access/service_tokens" \
       "$(jq -nc --arg n "$name" '{name:$n, duration:"forever"}')")"
     id="$(jq -r '.result.id' <<<"$res")"
     cid="$(jq -r '.result.client_id' <<<"$res")"
     csec="$(jq -r '.result.client_secret' <<<"$res")"
   elif [ "$rotate" = "1" ]; then
     log "==> rotating service token $name (the old secret stops working NOW)"
-    res="$(cf POST "/accounts/${CF_ACCOUNT_ID}/access/service_tokens/${id}/rotate")"
+    res="$(cf POST "/accounts/${ACCOUNT_ID}/access/service_tokens/${id}/rotate")"
     cid="$(jq -r '.result.client_id' <<<"$res")"
     csec="$(jq -r '.result.client_secret' <<<"$res")"
   else
@@ -147,22 +180,22 @@ for name in "${TOKENS[@]}"; do
 done
 
 # --- application --------------------------------------------------------------
-APPS="$(cf GET "/accounts/${CF_ACCOUNT_ID}/access/apps")"
-APP_ID="$(jq -r --arg d "$ACCESS_HOSTNAME" '.result[] | select(.domain==$d) | .id' <<<"$APPS" | head -1)"
+APPS="$(cf GET "/accounts/${ACCOUNT_ID}/access/apps")"
+APP_ID="$(jq -r --arg d "$HOSTNAME_" '.result[] | select(.domain==$d) | .id' <<<"$APPS" | head -1)"
 if [ -z "$APP_ID" ]; then
-  log "==> creating Access application for $ACCESS_HOSTNAME"
-  body="$(jq -nc --arg n "$APP_NAME" --arg d "$ACCESS_HOSTNAME" --arg s "$SESSION" \
+  log "==> creating Access application for $HOSTNAME_"
+  body="$(jq -nc --arg n "$APP_NAME" --arg d "$HOSTNAME_" --arg s "$SESSION" \
     '{name:$n, domain:$d, type:"self_hosted", session_duration:$s}')"
-  res="$(cf POST "/accounts/${CF_ACCOUNT_ID}/access/apps" "$body")"
+  res="$(cf POST "/accounts/${ACCOUNT_ID}/access/apps" "$body")"
   APP_ID="$(jq -r '.result.id' <<<"$res")"
 else
-  log "· Access application for $ACCESS_HOSTNAME exists ($APP_ID)"
+  log "· Access application for $HOSTNAME_ exists ($APP_ID)"
 fi
 
 # --- policy -------------------------------------------------------------------
 # decision=non_identity is what makes a service-token rule actually gate: an
 # "allow" policy would also admit browser identity flows, which is a second door.
-POLICIES="$(cf GET "/accounts/${CF_ACCOUNT_ID}/access/apps/${APP_ID}/policies")"
+POLICIES="$(cf GET "/accounts/${ACCOUNT_ID}/access/apps/${APP_ID}/policies")"
 POLICY_ID="$(jq -r --arg n "$POLICY_NAME" '.result[] | select(.name==$n) | .id' <<<"$POLICIES" | head -1)"
 
 # Every token in ONE policy: include entries are ORed, so this admits any of
@@ -186,10 +219,10 @@ pbody="$(jq -nc --arg n "$POLICY_NAME" --arg ids "$ids" \
     include:[$ids | split("\n")[] | select(. != "") | {service_token:{token_id:.}}]}')"
 if [ -z "$POLICY_ID" ]; then
   log "==> creating Service Auth policy $POLICY_NAME"
-  cf POST "/accounts/${CF_ACCOUNT_ID}/access/apps/${APP_ID}/policies" "$pbody" >/dev/null
+  cf POST "/accounts/${ACCOUNT_ID}/access/apps/${APP_ID}/policies" "$pbody" >/dev/null
 else
   log "==> updating Service Auth policy $POLICY_NAME"
-  cf PUT "/accounts/${CF_ACCOUNT_ID}/access/apps/${APP_ID}/policies/${POLICY_ID}" "$pbody" >/dev/null
+  cf PUT "/accounts/${ACCOUNT_ID}/access/apps/${APP_ID}/policies/${POLICY_ID}" "$pbody" >/dev/null
 fi
 
 # Any other policy on this application is a way in that bypasses the tokens.

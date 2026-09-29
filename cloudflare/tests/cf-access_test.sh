@@ -14,6 +14,7 @@
 #   5. a run that dies after minting still prints what it minted
 #   6. an extra policy on the application is refused
 #   7. bad input is refused before any API call
+#   8. the API token is read from --api-token-file (a file or stdin) and sent
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -22,16 +23,17 @@ STATE="$(mktemp -d)"
 trap 'rm -rf "$STATE"; [ -n "${STUB_PID:-}" ] && kill "$STUB_PID" 2>/dev/null || true' EXIT
 
 PORT="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')"
-python3 "$HERE/cf_api_stub.py" "$PORT" "$STATE" &
+printf 'stub-api-token\n' > "$STATE/api-token"
+python3 "$HERE/cf_api_stub.py" "$PORT" "$STATE" stub-api-token &
 STUB_PID=$!
 for _ in $(seq 1 50); do
   curl -fsS "http://127.0.0.1:${PORT}/health" >/dev/null 2>&1 && break
   sleep 0.1
 done
 
-run() { # extra env assignments as args; stdout only
-  env CF_API_BASE="http://127.0.0.1:${PORT}" CF_API_TOKEN=stub CF_ACCOUNT_ID=acct \
-    ACCESS_HOSTNAME=api.test.local "$@" bash "$SCRIPT" 2>/dev/null
+run() { # extra flags as args; stdout only
+  bash "$SCRIPT" --api-base "http://127.0.0.1:${PORT}" --api-token-file "$STATE/api-token" \
+    --account-id acct --hostname api.test.local "$@" 2>/dev/null
 }
 
 count() { python3 -c "import json;print(len(json.load(open('$STATE/$1.json'))))"; }
@@ -52,7 +54,7 @@ grep -q '^CF_ACCESS_CLIENT_SECRET_API_TEST_LOCAL_CLIENT=' <<<"$out" || fail "no 
 [ "$(count apps)" = "1" ] && [ "$(count policies)" = "1" ] || fail "expected one app and one policy"
 
 echo "== a first run with named tokens prints every secret =="
-out="$(run ACCESS_TOKENS="ci backup")"
+out="$(run --token ci --token backup)"
 for n in CI BACKUP; do
   grep -q "^CF_ACCESS_CLIENT_ID_${n}=" <<<"$out"     || fail "no client id for $n"
   grep -q "^CF_ACCESS_CLIENT_SECRET_${n}=" <<<"$out" || fail "no secret for $n"
@@ -71,7 +73,7 @@ assert len(ids) == 3 and len(set(ids)) == 3, ids
 PY
 
 echo "== a re-run creates nothing and prints no secret =="
-out="$(run ACCESS_TOKENS="ci backup")"
+out="$(run --token ci --token backup)"
 [ "$(count tokens)" = "3" ] && [ "$(count apps)" = "1" ] && [ "$(count policies)" = "1" ] \
   || fail "a re-run created something"
 grep -q '^CF_ACCESS_CLIENT_SECRET_' <<<"$out" && fail "a re-run printed a secret it cannot know"
@@ -79,7 +81,7 @@ grep -q '^CF_ACCESS_CLIENT_ID_CI=' <<<"$out" || fail "a re-run must still print 
 
 echo "== a run managing one token keeps the others in the policy =="
 before="$(policy_ids)"
-run ACCESS_TOKENS="ci" >/dev/null
+run --token ci >/dev/null
 [ "$(policy_ids)" = "$before" ] || fail "a partial run changed the policy: [$before] -> [$(policy_ids)]"
 
 echo "== ...but drops a token that no longer exists =="
@@ -89,18 +91,18 @@ import json, sys
 path = sys.argv[1] + '/tokens.json'
 tokens = json.load(open(path)); del tokens[sys.argv[2]]; json.dump(tokens, open(path, 'w'))
 PY
-run ACCESS_TOKENS="ci" >/dev/null
+run --token ci >/dev/null
 grep -qw "$gone" <<<"$(policy_ids)" && fail "a deleted token is still in the policy"
 [ "$(wc -w <<<"$(policy_ids)")" = "2" ] || fail "expected 2 tokens left, have: $(policy_ids)"
 
 echo "== rotation is scoped =="
-out="$(run ACCESS_TOKENS="ci api.test.local-client" ACCESS_ROTATE="ci")"
+out="$(run --token ci --token api.test.local-client --rotate ci)"
 grep -q '^CF_ACCESS_CLIENT_SECRET_CI=' <<<"$out" || fail "ACCESS_ROTATE=ci did not mint a secret for ci"
 grep -q '^CF_ACCESS_CLIENT_SECRET_API_TEST_LOCAL_CLIENT=' <<<"$out" && fail "rotating ci rotated the other token too"
 
 echo "== a run that dies after minting still prints the secret =="
 set +e
-out="$(run ACCESS_TOKENS="fresh then-fail")"; rc=$?
+out="$(run --token fresh --token then-fail)"; rc=$?
 set -e
 [ "$rc" != "0" ] || fail "a failed mint did not fail the run"
 grep -q '^CF_ACCESS_CLIENT_SECRET_FRESH=' <<<"$out" || fail "the secret minted before the failure was lost"
@@ -112,9 +114,29 @@ assert all(t['name'] != 'then-fail' for t in json.load(open('$STATE/tokens.json'
 echo "== bad input is refused before any API call =="
 # Captured first: piped straight into grep, pipefail would report the script's
 # (correct) non-zero exit as a failed match.
-out="$(env CF_API_BASE="http://127.0.0.1:1" CF_API_TOKEN=x CF_ACCOUNT_ID=x ACCESS_HOSTNAME=x \
-  ACCESS_TOKENS="a" ACCESS_ROTATE="b" bash "$SCRIPT" 2>&1)" && fail "rotating an unmanaged token succeeded"
-grep -q "not in ACCESS_TOKENS" <<<"$out" || fail "rotating an unmanaged token: unexpected error: $out"
+bad() { # expected-message flags… — must fail before any API call
+  local want="$1" out; shift
+  out="$(bash "$SCRIPT" --api-base "http://127.0.0.1:1" "$@" 2>&1 </dev/null)" && fail "accepted: $*"
+  grep -q -- "$want" <<<"$out" || fail "$*: expected '$want', got: $out"
+}
+base=(--hostname x --account-id x --api-token-file "$STATE/api-token")
+bad "is not one of the --token names" "${base[@]}" --token a --rotate b
+bad "unknown argument '--bogus'"      "${base[@]}" --bogus
+bad "--hostname is required"          --account-id x --api-token-file "$STATE/api-token"
+bad "--api-token-file is required"    --hostname x --account-id x
+bad "cannot read"                     --hostname x --account-id x --api-token-file /nonexistent
+: > "$STATE/empty-token"
+bad "is empty"                        --hostname x --account-id x --api-token-file "$STATE/empty-token"
+
+echo "== the API token comes from the file, and a wrong one is rejected =="
+printf 'wrong-token' > "$STATE/wrong-token"
+bash "$SCRIPT" --api-base "http://127.0.0.1:${PORT}" --api-token-file "$STATE/wrong-token" \
+  --account-id acct --hostname api.test.local --token ci >/dev/null 2>&1 \
+  && fail "a wrong API token was accepted — is the token being sent?"
+out="$(printf 'stub-api-token' | bash "$SCRIPT" --api-base "http://127.0.0.1:${PORT}" \
+  --api-token-file - --account-id acct --hostname api.test.local --token ci 2>/dev/null)" \
+  || fail "--api-token-file - (stdin) did not work"
+grep -q '^CF_ACCESS_CLIENT_ID_CI=' <<<"$out" || fail "stdin run printed no client id"
 
 echo "== an extra policy is refused =="
 python3 - "$STATE" <<'PY'
@@ -125,7 +147,7 @@ app = list(ps.values())[0]['app']
 ps['rogue'] = {'id': 'rogue', 'app': app, 'name': 'a-second-door', 'decision': 'allow', 'include': []}
 json.dump(ps, open(path, 'w'))
 PY
-if run ACCESS_TOKENS="ci" >/dev/null 2>&1; then
+if run --token ci >/dev/null 2>&1; then
   fail "accepted an application with a second policy"
 fi
 
