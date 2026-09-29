@@ -35,6 +35,13 @@ loudly beats one that quietly hardens a host with the wrong bytes.
 Or just copy the file. They are single files with no imports for exactly that
 reason.
 
+`OPS_BASE_URL` points it somewhere else — a mirror, an air-gapped copy, or a
+test that serves a corrupted file to prove the refusal works.
+
+The repo has to be public for this to work: fetching an asset from a private
+release needs a token, and putting a GitHub token on every host you are about to
+harden trades one problem for a worse one.
+
 ## What is here
 
 ### `remote/harden.sh`

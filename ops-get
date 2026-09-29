@@ -22,7 +22,9 @@ REPO="${OPS_REPO:-LytronHQ/ops}"
 SCRIPT="${1:?usage: ops-get <script> <version> [dest]}"
 VERSION="${2:?usage: ops-get <script> <version> [dest]}"
 DEST="${3:-./$SCRIPT}"
-BASE="https://github.com/${REPO}/releases/download/${VERSION}"
+# Overridable for a mirror, an air-gapped copy, or a test that needs to serve a
+# deliberately corrupted file and prove this refuses it.
+BASE="${OPS_BASE_URL:-https://github.com/${REPO}/releases/download/${VERSION}}"
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
