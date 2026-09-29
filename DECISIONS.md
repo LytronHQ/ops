@@ -8,6 +8,22 @@ A new decision is added here in the PR that makes it.
 
 ---
 
+### ops-get lists a release, explains what is missing, and takes flags
+
+2026-09-29 · #33
+
+Using v2.0.0 on a fresh server: with no arguments `ops-get` printed a shell
+error with a line number; there was no way to see which scripts a version had;
+and a fetch in the seconds before v2.0.0 was published reported "no harden.sh
+in v2.0.0" when the whole release did not exist yet. It now fetches
+`SHA256SUMS` first — the proof and the table of contents — says when a version
+is missing or still being published, names the scripts a release has, and
+lists them with `--list`.
+
+`OPS_REPO` and `OPS_BASE_URL` became `--repo` and `--base-url`, finishing #24.
+Removing them is breaking, so this went straight to v3.0.0 rather than a
+v2.1.0 with a deprecation period: v2.0.0 was minutes old.
+
 ### Every input is a flag; secrets come from files, never argv
 
 2026-09-29 · #24, #25, #26, #27, #28

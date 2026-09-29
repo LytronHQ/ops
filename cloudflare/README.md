@@ -12,7 +12,7 @@ Policies Write** and **Access: Service Tokens Edit** (both account-level).
 ## Get it
 
 ```sh
-./ops-get cf-access.sh v2.0.0
+./ops-get cf-access.sh v3.0.0
 ```
 
 ## Use it
