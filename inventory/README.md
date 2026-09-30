@@ -5,7 +5,8 @@ The first question when taking over a server, auditing one, or rebuilding it.
 
 **Runs on:** the machine being inspected — or any machine, pointed at another
 system's files with `--root`.
-**Platforms:** Linux. Windows is next.
+**Platforms:** Linux (`inventory.sh`) and Windows (`inventory.ps1`) — the same
+columns, formats, filters and saved list on both.
 **Needs:** bash and the usual tools. Nothing to install. It only reads: it never
 asks a package manager to refresh, and never touches the network.
 
@@ -13,6 +14,10 @@ asks a package manager to refresh, and never touches the network.
 
 ```sh
 ./ops-get inventory.sh v4.2.0
+```
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\ops-get.ps1 inventory.ps1 v4.2.0
 ```
 
 ## Use it
@@ -65,6 +70,42 @@ them all `apt` rather than raising a false alarm on every line.
 | update | | ✓ | a newer version known from apt's local package lists — no network |
 | summary | | ✓ | one line |
 
+## On Windows
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\inventory.ps1 -Wide
+.\inventory.ps1 -Pm choco,scoop -Search git
+.\inventory.ps1 -Format json > inventory.json
+```
+
+Options are PowerShell-style — `-Wide`, `-Format`, `-Pm`, `-Search`,
+`-Explicit`, `-Updates`, `-Refresh`, `-NoCache`, `-Cache`, `-Help` — with the
+same meaning as the flags below. It runs on Windows PowerShell 5.1, which every
+Windows has, and on PowerShell 7.
+
+| PM | Means | Read from |
+|---|---|---|
+| `msi` | installed by Windows Installer | the registry's uninstall entries: machine (`x64`), 32-bit (`x86`) and per-user |
+| `exe` | installed by any other installer | the same |
+| `winget` | known to winget | `winget export` — winget consults its sources for this, which may use the network |
+| `choco` | Chocolatey | each package's `.nuspec` in its `lib` folder — no `choco` process |
+| `scoop` | Scoop | each app's `manifest.json` and `install.json`, user and global |
+| `store` | Microsoft Store and MSIX | `Get-AppxPackage`; frameworks are marked as dependencies, parts of Windows itself are left out |
+
+Hidden system components and Windows updates are not listed: they are not
+software someone installed. Chocolatey does not record why a package was
+installed, but a package another installed package depends on is marked as a
+dependency.
+
+An app installed through winget, or a Chocolatey package that runs an
+installer, usually also registered an uninstall entry — so it can appear twice,
+once for the manager and once for the installer. That is what Windows records;
+it is shown rather than guessed away.
+
+The saved list is `%LOCALAPPDATA%\ops\inventory.tsv`, in the same format as on
+Linux. It is warned stale when anything under Program Files, per-user
+Programs, or the Chocolatey and Scoop folders changed after it was made.
+
 ## The saved list
 
 Every scan is saved **in full** — every column, whatever format was asked for
@@ -101,6 +142,11 @@ except `HOME` and `XDG_CACHE_HOME`, which say where the saved list lives.
 | `-h`, `--help` | | print the options |
 
 ## Tests
+
+`tests/inventory_test.ps1` runs `inventory.ps1` on a real Windows — GitHub's
+Windows runners, under Windows PowerShell 5.1 and PowerShell 7 — with test
+uninstall entries added under `HKCU` and removed afterwards, and fake Chocolatey
+and Scoop folders. Elsewhere it reports itself skipped.
 
 `tests/inventory_test.sh` builds a fake system and runs the script with
 `--root` against it: the real `dpkg-query` and `apt` read a status file, a
