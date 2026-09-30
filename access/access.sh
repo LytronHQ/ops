@@ -3,6 +3,8 @@
 # access.sh — gate a hostname so only machines holding a service token get
 # through. Idempotent; safe to re-run. Replaces the dashboard walkthrough.
 #
+# platforms: linux
+#
 # Providers: cloudflare (Cloudflare Access) — creates, or finds, the Access
 # application, ONE Service Auth policy, and the service tokens it admits.
 # The capability is the name; the vendor is a --provider, the way the OS is

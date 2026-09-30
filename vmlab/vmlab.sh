@@ -4,6 +4,8 @@
 # virt-install: a lab of several for testing against real separate hosts, or a
 # single VM that stays.
 #
+# platforms: linux
+#
 #   ./vmlab.sh create                          # the default lab: db, app1, app2, app3
 #   ./vmlab.sh create --name web-1 --memory 2048 --vcpu 2 --disk 40gb
 #   ./vmlab.sh status                          # every vmlab VM: state, RAM, address

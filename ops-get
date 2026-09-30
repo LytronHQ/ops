@@ -2,13 +2,17 @@
 #
 # ops-get — fetch one script from a pinned release of this repo and verify it.
 #
+# platforms: linux
+#
 #   ops-get <script> <version> [dest]      fetch, verify, write to dest (default ./<script>)
-#   ops-get --list <version>               the scripts in that version
+#   ops-get --list <version>               the scripts in that version, marking
+#                                          any that do not run on this machine
 #
 #   ops-get harden.sh v3.0.0 /tmp/harden.sh
 #
 # Options — every input is one; nothing is read from the environment:
-#   --list <version>    list the scripts in a version, from its SHA256SUMS
+#   --list <version>    list the scripts in a version, from its SHA256SUMS;
+#                       those whose MANIFEST excludes this platform are marked
 #   --repo <owner/name> whose releases to use (default LytronHQ/ops): a fork
 #   --base-url <url>    the whole release URL, for a mirror, an air-gapped copy,
 #                       or a test serving a deliberately corrupted file
@@ -80,26 +84,65 @@ fetch() { # url out
 fetch "${BASE}/SHA256SUMS" "$tmp/SHA256SUMS" \
   || die "cannot get SHA256SUMS for $VERSION of $REPO. Either that version does not exist, it is still being published (a new release can take a few minutes to appear), or it has no checksums. Nothing was fetched."
 
-# Every asset the release vouches for, except the checksum file itself.
-scripts() { awk '{ f = $2; sub(/^\*/, "", f); if (f != "SHA256SUMS") print f }' "$tmp/SHA256SUMS"; }
+# Every script the release vouches for — not the checksum file or the manifest.
+scripts() { awk '{ f = $2; sub(/^\*/, "", f); if (f != "SHA256SUMS" && f != "MANIFEST") print f }' "$tmp/SHA256SUMS"; }
+listed() { awk -v f="$1" '$2 == f || $2 == "*"f {print $1}' "$tmp/SHA256SUMS" | head -1; }
+
+sha256() {
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" | awk '{print $1}'
+  else die "need sha256sum or shasum"; fi
+}
+
+# fetch_verified NAME: download an asset and check it against SHA256SUMS, or die.
+fetch_verified() {
+  want="$(listed "$1")"
+  fetch "${BASE}/$1" "$tmp/$1" \
+    || die "$1 is listed in $VERSION's SHA256SUMS but could not be downloaded from ${BASE}/$1"
+  got="$(sha256 "$tmp/$1")"
+  [ "$want" = "$got" ] || { echo "ops-get: CHECKSUM MISMATCH for $1@$VERSION" >&2
+                            echo "  expected $want" >&2; echo "  got      $got" >&2; exit 1; }
+}
+
+# The platform this runs on, in MANIFEST's words.
+case "$(uname -s)" in
+  Linux)                     PLATFORM=linux ;;
+  Darwin)                    PLATFORM=macos ;;
+  MINGW*|MSYS*|CYGWIN*)      PLATFORM=windows ;;
+  *)                         PLATFORM="$(uname -s | tr '[:upper:]' '[:lower:]')" ;;
+esac
+
+# MANIFEST says where each script runs. Releases before it have none, and then
+# nothing is marked. When the release lists one it is verified like any asset:
+# a list saying "runs here" is a claim, and an unverified claim is a way in.
+HAS_MANIFEST=""
+if [ -n "$(listed MANIFEST)" ]; then
+  fetch_verified MANIFEST
+  HAS_MANIFEST=1
+fi
+platforms_of() { [ -n "$HAS_MANIFEST" ] && awk -v f="$1" '$1 == f { $1 = ""; sub(/^ /, ""); print }' "$tmp/MANIFEST"; }
+runs_here() { # script — true when there is no manifest entry to say otherwise
+  p="$(platforms_of "$1" || true)"
+  [ -z "$p" ] && return 0
+  case " $p " in *" $PLATFORM "*) return 0 ;; esac
+  return 1
+}
 
 if [ -n "$LIST" ]; then
-  scripts
+  # Everything is listed; what does not run here says so, rather than being
+  # hidden — hidden, a module looks like it does not exist.
+  for f in $(scripts); do
+    if runs_here "$f"; then echo "$f"
+    else printf '%-16s unsupported on %s (runs on: %s)\n' "$f" "$PLATFORM" "$(platforms_of "$f")"; fi
+  done
   exit 0
 fi
 
-want="$(awk -v f="$SCRIPT" '$2 == f || $2 == "*"f {print $1}' "$tmp/SHA256SUMS" | head -1)"
-[ -n "$want" ] || die "$SCRIPT is not in $VERSION. It has: $(scripts | tr '\n' ' ')"
-
-fetch "${BASE}/${SCRIPT}" "$tmp/$SCRIPT" \
-  || die "$SCRIPT is listed in $VERSION's SHA256SUMS but could not be downloaded from ${BASE}/${SCRIPT}"
-
-if command -v sha256sum >/dev/null 2>&1; then got="$(sha256sum "$tmp/$SCRIPT" | awk '{print $1}')"
-elif command -v shasum >/dev/null 2>&1; then got="$(shasum -a 256 "$tmp/$SCRIPT" | awk '{print $1}')"
-else die "need sha256sum or shasum"; fi
-
-[ "$want" = "$got" ] || { echo "ops-get: CHECKSUM MISMATCH for $SCRIPT@$VERSION" >&2
-                          echo "  expected $want" >&2; echo "  got      $got" >&2; exit 1; }
+[ -n "$(listed "$SCRIPT")" ] || die "$SCRIPT is not in $VERSION. It has: $(scripts | tr '\n' ' ')"
+fetch_verified "$SCRIPT"
+# Still fetched: it may be for another machine. But said, so nobody is surprised.
+runs_here "$SCRIPT" \
+  || echo "ops-get: note: $SCRIPT does not run on $PLATFORM (runs on: $(platforms_of "$SCRIPT")); fetched anyway" >&2
 
 mkdir -p "$(dirname "$DEST")"
 cp "$tmp/$SCRIPT" "$DEST"

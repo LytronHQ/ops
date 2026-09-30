@@ -9,6 +9,10 @@ add one when you make a new decision.
 
 One folder, one capability, one README.
 
+- **Every script says where it runs** in a `# platforms: linux macos windows`
+  header line — only platforms it has actually been run on. The release turns
+  these into `MANIFEST`, and `ops-get --list` marks what does not run on the
+  machine asking. A script without the line does not build.
 - **Scripts are single files.** No imports, no sourcing a sibling: a user fetches
   one file with `ops-get` and runs it. Anything shared is copied, not linked.
 - **Every module is got the same way**, with `ops-get`, whichever machine it

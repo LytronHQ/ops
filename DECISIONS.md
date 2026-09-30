@@ -8,6 +8,21 @@ A new decision is added here in the PR that makes it.
 
 ---
 
+### --list shows every script, marking what does not run here
+
+2026-09-30 · #39
+
+Windows may be supported later, so a user needs to see what runs on their
+platform. The choice was between listing only what runs here and listing
+everything with a mark; marking won, because a hidden module looks like one
+that does not exist. Each script declares its platforms in a header line —
+only those it has been run on, so everything says `linux` until another
+platform is actually tested. The release turns them into a `MANIFEST`,
+checksummed like any asset, since a list saying "runs here" is a claim.
+
+The release commands moved into `build-release`, run by both the workflow and
+a person, instead of two copies of the same steps that could drift.
+
 ### Modules are named for the capability; the vendor is a provider
 
 2026-09-30 · #36

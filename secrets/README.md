@@ -16,7 +16,7 @@ and `jq`, and a machine-account access token with read access to the projects.
 ## Get it
 
 ```sh
-./ops-get secrets.sh v4.0.0
+./ops-get secrets.sh v4.1.0
 ```
 
 ## Use it

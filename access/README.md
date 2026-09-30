@@ -16,7 +16,7 @@ Policies Write** and **Access: Service Tokens Edit** (both account-level).
 ## Get it
 
 ```sh
-./ops-get access.sh v4.0.0
+./ops-get access.sh v4.1.0
 ```
 
 ## Use it

@@ -4,6 +4,8 @@
 # manager: secrets from one or more projects, plus optional non-secret
 # settings, as KEY='value' lines ready to source.
 #
+# platforms: linux
+#
 # Providers: bitwarden (Bitwarden Secrets Manager, through its `bws` CLI).
 # The capability is the name; the vendor is a --provider, the way the OS is
 # for harden.sh. Another provider is another branch here, not another script.

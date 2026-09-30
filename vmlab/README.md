@@ -14,7 +14,7 @@ no `virt-install`: it builds the domains with `virsh` directly.
 Like every module, with [`ops-get`](../README.md#ops-get):
 
 ```sh
-./ops-get vmlab.sh v4.0.0
+./ops-get vmlab.sh v4.1.0
 ```
 
 ## Use it
