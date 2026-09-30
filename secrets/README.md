@@ -1,9 +1,13 @@
-# bitwarden
+# secrets
 
-Materialise an environment's configuration from Bitwarden Secrets Manager:
-secrets from one or more projects, plus optional non-secret settings, as
-`KEY='value'` lines ready to source. Bitwarden holds the secret values; your
-repository holds, at most, the non-secret settings and the project ids.
+Materialise an environment's configuration from a secrets manager: secrets from
+one or more projects, plus optional non-secret settings, as `KEY='value'` lines
+ready to source. The secrets manager holds the values; your repository holds, at
+most, the non-secret settings and the project ids.
+
+**Providers:** `bitwarden` — Bitwarden Secrets Manager. The module is named for
+what it does; where the secrets live is `--provider`, so another secrets
+manager would be a new branch in the same script, not a new script.
 
 **Runs on:** your workstation or CI. Not on a target host.
 **Needs:** bash 4.4+, [`bws`](https://bitwarden.com/help/secrets-manager-cli/)
@@ -12,13 +16,13 @@ and `jq`, and a machine-account access token with read access to the projects.
 ## Get it
 
 ```sh
-./ops-get bws-env.sh v3.0.0
+./ops-get secrets.sh v4.0.0
 ```
 
 ## Use it
 
 ```sh
-./bws-env.sh --access-token-file ~/.config/bws/production \
+./secrets.sh --access-token-file ~/.config/bws/production \
   --project <shared-project-id> --project <production-project-id> \
   --vars production.vars --out .env.production
 
@@ -28,7 +32,7 @@ set -a; . ./.env.production; set +a
 In CI, where the token is already a secret variable, hand it over on stdin:
 
 ```sh
-printf '%s' "$BWS_ACCESS_TOKEN" | ./bws-env.sh --access-token-file - --project <id>
+printf '%s' "$BWS_ACCESS_TOKEN" | ./secrets.sh --access-token-file - --project <id>
 ```
 
 **Later wins.** The `--vars` file is read first, then each `--project` in the
@@ -49,11 +53,12 @@ unrelated `export` in your shell cannot redirect it.
 
 | Flag | Default | Meaning |
 |---|---|---|
+| `--provider <name>` | `bitwarden` | where the secrets live. Only `bitwarden` is implemented; anything else is refused before anything runs |
 | `--project <id>` | required | a Secrets Manager project to read. Repeatable; later ones win |
 | `--access-token-file <path>` | required | a file holding the machine account's access token, or `-` for stdin. Never the token itself as a value: a command line is readable by every user through `ps`. It reaches `bws` in that process's environment, not its arguments |
 | `--vars <file>` | none | non-secret `KEY=value` lines, read first. Blank lines and `#` comments are skipped; the value is everything after the first `=`, taken literally |
 | `--out <file>` | stdout | write here instead, mode `0600`. Written to a temporary file beside it and moved into place, so a failed run leaves the previous file as it was |
-| `--server-url <url>` | Bitwarden's cloud | a self-hosted Bitwarden server |
+| `--server-url <url>` | Bitwarden's cloud | `bitwarden`: a self-hosted server |
 | `-h`, `--help` | | print the options |
 
 ## What it guarantees
@@ -70,7 +75,7 @@ unrelated `export` in your shell cannot redirect it.
 
 ## Tests
 
-`tests/bws-env_test.sh` runs this script against `tests/fake-bws`, a stand-in
+`tests/secrets_test.sh` runs this script against `tests/fake-bws`, a stand-in
 for the CLI serving known projects: awkward values round-tripping through
 `source`, precedence, `--out` mode and an existing file surviving a failed run,
 the token by file and stdin and never in `bws`'s argv, the caller's `BWS_*`

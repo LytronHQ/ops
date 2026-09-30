@@ -1,17 +1,20 @@
 #!/usr/bin/env bash
 #
-# cf-access.sh — put a hostname behind Cloudflare Access for machines: create,
-# or find, the Access application, ONE Service Auth policy, and the service
-# tokens that policy admits. Idempotent; safe to re-run. Replaces the dashboard
-# walkthrough.
+# access.sh — gate a hostname so only machines holding a service token get
+# through. Idempotent; safe to re-run. Replaces the dashboard walkthrough.
 #
-#   ./cf-access.sh --hostname api.example.com --account-id <id> \
+# Providers: cloudflare (Cloudflare Access) — creates, or finds, the Access
+# application, ONE Service Auth policy, and the service tokens it admits.
+# The capability is the name; the vendor is a --provider, the way the OS is
+# for harden.sh. Another provider is another branch here, not another script.
+#
+#   ./access.sh --hostname api.example.com --account-id <id> \
 #     --api-token-file ~/.config/cloudflare/token --token ci --token backup
 #
 #   # in CI, the secret on stdin:
-#   printf '%s' "$CF_API_TOKEN" | ./cf-access.sh --api-token-file - …
+#   printf '%s' "$CF_API_TOKEN" | ./access.sh --api-token-file - …
 #
-# The API token needs Access: Apps and Policies Write + Access: Service Tokens
+# cloudflare: the API token needs Access: Apps and Policies Write + Access: Service Tokens
 # Edit (both account-level).
 #
 # Prints, on stdout, for each --token:
@@ -22,8 +25,10 @@
 # reprint it: store what you see. Everything else goes to stderr.
 #
 # Options — every input is one; nothing is read from the environment:
+#   --provider <name>        who provides the gate: cloudflare (the default,
+#                            and the only one so far)
 #   --hostname <host>        the hostname to protect (required)
-#   --account-id <id>        Cloudflare account id (required)
+#   --account-id <id>        cloudflare: account id (required)
 #   --api-token-file <path>  file holding the API token, or - for stdin
 #                            (required). A file, never a value: argv is
 #                            readable by every user through ps.
@@ -53,15 +58,16 @@ log() { echo "$*" >&2; }
 die() { echo "error: $*" >&2; exit 1; }
 usage() { sed -n '3,/^set -euo/p' "$0" | sed '$d; s/^# \{0,1\}//'; }
 
-HOSTNAME_="" ACCOUNT_ID="" TOKEN_FILE="" APP_NAME="" POLICY_NAME="service-tokens"
+PROVIDER="cloudflare" HOSTNAME_="" ACCOUNT_ID="" TOKEN_FILE="" APP_NAME="" POLICY_NAME="service-tokens"
 SESSION="24h" API="https://api.cloudflare.com/client/v4" TOKENS=() ROTATE=()
 while [ $# -gt 0 ]; do
   case "$1" in --*=*) set -- "${1%%=*}" "${1#*=}" "${@:2}" ;; esac
   case "$1" in
-    --hostname|--account-id|--api-token-file|--token|--rotate|--app-name|--policy-name|--session|--api-base)
+    --provider|--hostname|--account-id|--api-token-file|--token|--rotate|--app-name|--policy-name|--session|--api-base)
       [ $# -ge 2 ] && [ -n "$2" ] || die "$1 needs a value (try --help)" ;;
   esac
   case "$1" in
+    --provider)       PROVIDER="$2"; shift 2 ;;
     --hostname)       HOSTNAME_="$2"; shift 2 ;;
     --account-id)     ACCOUNT_ID="$2"; shift 2 ;;
     --api-token-file) TOKEN_FILE="$2"; shift 2 ;;
@@ -75,6 +81,10 @@ while [ $# -gt 0 ]; do
     *)                die "unknown argument '$1' (try --help)" ;;
   esac
 done
+case "$PROVIDER" in
+  cloudflare) ;;
+  *) die "--provider '$PROVIDER' is not implemented. Implemented: cloudflare" ;;
+esac
 [ -n "$HOSTNAME_" ]  || die "--hostname is required (e.g. api.example.com)"
 [ -n "$ACCOUNT_ID" ] || die "--account-id is required"
 [ -n "$TOKEN_FILE" ] || die "--api-token-file is required (a file, or - for stdin)"

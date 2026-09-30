@@ -44,7 +44,7 @@ One folder, one capability, one README.
   descriptor (`-H @<(…)`), and to a CLI through its environment. Test it: a shim
   first on `PATH` that logs its argv.
 - **A child reads only what you give it.** Clear the environment variables a
-  tool would read on its own (as `bws-env.sh` does with `BWS_*`), then set them
+  tool would read on its own (as `secrets.sh` does with `bws`'s `BWS_*`), then set them
   from flags.
 
 ## Behaviour
@@ -60,20 +60,28 @@ One folder, one capability, one README.
 - **Never cut off the person running it.** Anything touching SSH or the firewall
   checks first that the next login will still work.
 
-## Platforms
+## Platforms and providers
 
-One script per capability, not per distribution. The script reads
+One script per capability, not per distribution or vendor. The script reads
 `/etc/os-release`, refuses a family it does not implement before changing
 anything, and keeps what differs between families behind one function. Adding a
 family is a new branch in that function, tested on that family's cloud image in
-the lab (`vmlab.sh create --image …`). Never a dispatcher that fetches
+the lab (`vmlab.sh create --image …`). A vendor works the same way, behind
+`--provider`. Never a dispatcher that fetches
 per-distribution scripts: `ops-get` verifies exactly one file.
 
 ## Names and versions
 
-- **A name says what the script does**, not which tool it wraps, and is unique
-  across the whole repo: release assets are flat, and the release refuses two
-  scripts with the same filename.
+- **A name is the operational capability**, from this repo's point of view —
+  harden a host, run a VM lab, gate a service, get an environment's secrets.
+  Not the tool it wraps (`bws`, `virsh`), not the vendor (Bitwarden,
+  Cloudflare), not the form of its output (an env file). The module folder and
+  the script share that name.
+- **The vendor is a `--provider`**, as the OS is for `harden.sh`: a branch
+  inside the one script, defaulting to the one implemented and refusing the
+  rest. Flags only one provider uses are documented as that provider's.
+- **Names are unique across the whole repo**: release assets are flat, and the
+  release refuses two scripts with the same filename.
 - **Versions are semver, and there is no `latest`.** Consumers pin a tag.
   - **major**: a script renamed or removed, a flag renamed or removed, a default
     changed, an output format changed
