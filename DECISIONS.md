@@ -8,6 +8,23 @@ A new decision is added here in the PR that makes it.
 
 ---
 
+### A result that is partly wrong is never saved as the whole
+
+2026-09-30 · #42
+
+`inventory.sh` saves every scan and reads it back later. Testing it found that
+one package manager failing to answer stopped the whole scan with no message.
+Now a collector that fails is named, the rest is still shown, the run exits
+`1` — and the list is not saved, since a later run would read a partial list
+back as the truth. The same rule protects the file itself: it is never written
+over a file that is not an inventory.
+
+Two things from real systems shaped the output. apt calls every package
+"local" when it has no package lists, as in most container images, so that
+case is detected rather than reported as hundreds of hand-installed packages;
+and apt drops the "automatic" flag for any package with an update, so whether a
+package was installed on purpose comes from `apt-mark` instead.
+
 ### --list shows every script, marking what does not run here
 
 2026-09-30 · #39
