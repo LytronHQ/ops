@@ -4,19 +4,34 @@
 #
 #   ./run-tests
 #
-# Suites are tests/*_test.sh (ops-get) and <module>/tests/*_test.sh. Each runs
-# the real script against stubs and prints PASS; its output is shown only when
-# it fails, so a green run is one line per suite.
+# Suites are tests/*_test.{sh,ps1} (ops-get) and <module>/tests/*_test.{sh,ps1}.
+# Each runs the real script against stubs and prints PASS; its output is shown
+# only when it fails, so a green run is one line per suite.
+#
+# PowerShell suites run with pwsh when it is installed. A suite that exits 77
+# does not apply here (a Windows-only suite on Linux, say) and is reported as
+# skipped — never counted as passed.
 set -u
 cd "$(dirname "$0")"
 
-n=0 failed=""
-for t in tests/*_test.sh */tests/*_test.sh; do
+PWSH="$(command -v pwsh 2>/dev/null || true)"
+n=0 skipped=0 failed=""
+for t in tests/*_test.sh */tests/*_test.sh tests/*_test.ps1 */tests/*_test.ps1; do
   [ -f "$t" ] || continue
-  n=$((n + 1))
   printf '%-44s ' "$t"
-  if out="$(bash "$t" 2>&1)"; then
-    echo ok
+  case "$t" in
+    *.ps1)
+      if [ -z "$PWSH" ]; then echo "skipped (no pwsh)"; skipped=$((skipped + 1)); continue; fi
+      # -Command, not -File: some pwsh installs abort on -File without a
+      # terminal. The exit code is passed through explicitly.
+      out="$("$PWSH" -NoProfile -NonInteractive -Command "& './$t'; exit \$LASTEXITCODE" 2>&1)"; rc=$? ;;
+    *)
+      out="$(bash "$t" 2>&1)"; rc=$? ;;
+  esac
+  if [ "$rc" = 0 ]; then
+    echo ok; n=$((n + 1))
+  elif [ "$rc" = 77 ]; then
+    echo "skipped ($(printf '%s\n' "$out" | tail -1))"; skipped=$((skipped + 1))
   else
     echo FAIL
     printf '%s\n' "$out" | sed 's/^/    /'
@@ -24,6 +39,6 @@ for t in tests/*_test.sh */tests/*_test.sh; do
   fi
 done
 
-[ "$n" -gt 0 ] || { echo "no test suites found" >&2; exit 1; }
+[ $((n + skipped)) -gt 0 ] || { echo "no test suites found" >&2; exit 1; }
 [ -z "$failed" ] || { echo "failed:$failed" >&2; exit 1; }
-echo "all $n passed"
+echo "all $n passed${skipped:+, $skipped skipped}" | sed 's/, 0 skipped//'

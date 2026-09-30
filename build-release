@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
 #
-# build-release — build a release's assets from this checkout: every script as
-# a flat file, ops-get, MANIFEST and SHA256SUMS. The release workflow runs it,
+# build-release — build a release's assets from this checkout: every script
+# (.sh and .ps1) as a flat file, ops-get and ops-get.ps1, MANIFEST and
+# SHA256SUMS. The release workflow runs it,
 # and so does a person when Actions is unavailable, so there is one set of
 # release rules rather than two copies that drift.
 #
 #   ./build-release [--out <dir>]      (default: dist)
 #
 # It refuses, building nothing, when:
-#   - a script does not parse
+#   - a script does not parse (PowerShell scripts are checked with PowerShell's
+#     own parser, so this needs pwsh)
 #   - two modules have a script with the same name (assets are flat)
 #   - a script has no "# platforms:" line, or names an unknown platform
 #
@@ -34,15 +36,48 @@ done
 # What `uname` can tell ops-get about the machine it runs on.
 KNOWN_PLATFORMS="linux macos windows"
 
-# The assets: ops-get, and every module script. Tests and their stubs are for
-# working on the repo, never assets.
-mapfile -t SCRIPTS < <(find . -mindepth 2 -name '*.sh' -not -path './.git/*' \
+# The assets: ops-get for each shell, and every module script. Tests and their
+# stubs are for working on the repo, never assets.
+mapfile -t SCRIPTS < <(find . -mindepth 2 \( -name '*.sh' -o -name '*.ps1' \) -not -path './.git/*' \
   -not -path "./${OUT#./}/*" -not -path '*/tests/*' | sort)
-SCRIPTS=(./ops-get "${SCRIPTS[@]}")
+SCRIPTS=(./ops-get ./ops-get.ps1 "${SCRIPTS[@]}")
 
+PS1=()
 for f in "${SCRIPTS[@]}"; do
-  sh -n "$f" 2>/dev/null || bash -n "$f" || die "$f does not parse"
+  case "$f" in
+    *.ps1)
+      # Windows PowerShell 5.1 reads a file without a BOM as Windows-1252, where
+      # the last byte of a UTF-8 em dash is a curly quote — a string delimiter
+      # to PowerShell. So a PowerShell script is plain ASCII, or it does not ship.
+      if LC_ALL=C grep -qn '[^[:print:][:space:]]' "$f"; then
+        die "$f has non-ASCII characters, which Windows PowerShell 5.1 misreads: $(LC_ALL=C grep -n '[^[:print:][:space:]]' "$f" | head -1 | cut -c1-80)"
+      fi
+      PS1+=("$f") ;;
+    *)     sh -n "$f" 2>/dev/null || bash -n "$f" || die "$f does not parse" ;;
+  esac
 done
+if [ "${#PS1[@]}" -gt 0 ]; then
+  command -v pwsh >/dev/null 2>&1 || die "needs pwsh to check the PowerShell scripts parse: ${PS1[*]}"
+  # PowerShell's own parser, all files in one process, from a checker script
+  # run with -File, so the paths arrive as arguments and nothing else. With
+  # -Command they would not: extra arguments are appended to the command and
+  # RUN — which executed ops-get.ps1 instead of parsing it.
+  #
+  # The real binary, found by asking pwsh itself: some installs (the snap)
+  # wrap it in a launcher that aborts without a terminal.
+  pwsh_bin="$(pwsh -NoProfile -NonInteractive -Command '(Get-Process -Id $PID).Path')"
+  checker="$(mktemp --suffix=.ps1)"
+  trap 'rm -f "$checker"' EXIT
+  cat > "$checker" <<'PS'
+foreach ($f in $args) {
+  $errs = $null
+  [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path -LiteralPath $f).Path, [ref]$null, [ref]$errs)
+  if ($errs) { '{0}: {1} (line {2})' -f $f, $errs[0].Message, $errs[0].Extent.StartLineNumber }
+}
+PS
+  bad="$("$pwsh_bin" -NoProfile -NonInteractive -File "$checker" "${PS1[@]}")"
+  [ -z "$bad" ] || die "does not parse: $bad"
+fi
 
 dupes="$(for f in "${SCRIPTS[@]}"; do basename "$f"; done | sort | uniq -d)"
 [ -z "$dupes" ] || die "two modules have a script with the same name, and assets are flat: $dupes"

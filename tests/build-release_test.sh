@@ -29,7 +29,7 @@ copy "$W/repo"
 
 echo "== the release has every script, ops-get, MANIFEST, SHA256SUMS, no tests =="
 "$W/repo/build-release" --out "$W/dist" >/dev/null
-want="$( (cd "$W/repo" && find . -mindepth 2 -name '*.sh' -not -path '*/tests/*' -printf '%f\n'; echo ops-get; echo MANIFEST; echo SHA256SUMS) | sort)"
+want="$( (cd "$W/repo" && find . -mindepth 2 \( -name '*.sh' -o -name '*.ps1' \) -not -path '*/tests/*' -printf '%f\n'; echo ops-get; echo ops-get.ps1; echo MANIFEST; echo SHA256SUMS) | sort)"
 got="$(ls "$W/dist" | sort)"
 [ "$got" = "$want" ] || fail "assets differ. want: $(tr '\n' ' ' <<<"$want") got: $(tr '\n' ' ' <<<"$got")"
 
@@ -66,6 +66,18 @@ refuse "duplicate" "same name"
 echo "== a script that does not parse stops the build =="
 fresh; printf '#!/bin/sh\n# platforms: linux\nif then fi (\n' > "$W/b/harden/broken.sh"
 refuse "does not parse" "does not parse"
+
+echo "== a PowerShell script that does not parse stops the build =="
+if command -v pwsh >/dev/null 2>&1; then
+  fresh; printf '# platforms: windows\nfunction f( {\n' > "$W/b/harden/broken.ps1"
+  refuse "ps1 does not parse" "does not parse: ./harden/broken.ps1"
+else
+  echo "   (no pwsh here; the PowerShell parse check is not exercised)"
+fi
+
+echo "== a PowerShell script with non-ASCII characters stops the build =="
+fresh; printf '# platforms: windows\n"not a path \342\200\224 flat"\n' > "$W/b/harden/dash.ps1"
+refuse "non-ASCII ps1" "dash.ps1 has non-ASCII characters"
 
 echo "== --out never replaces what is not a previous build =="
 fresh; mkdir -p "$W/keep"; echo precious > "$W/keep/file"
