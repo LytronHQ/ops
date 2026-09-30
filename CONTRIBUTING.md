@@ -21,6 +21,13 @@ One folder, one capability, one README.
   option. Before adding a module extracted from somewhere, search it for
   hostnames, account ids, product names and paths from where it came from, and
   say in the PR that you did.
+- **Windows scripts are PowerShell** (`.ps1`), and run on **Windows PowerShell
+  5.1** — the one every Windows has — as well as PowerShell 7: no `??`, no
+  ternary, TLS 1.2 set explicitly for web requests. They are **plain ASCII**:
+  5.1 reads a file without a BOM as Windows-1252, where part of a UTF-8 em
+  dash is a curly quote, which PowerShell treats as a string delimiter. The
+  build refuses a `.ps1` with anything else. Options are PowerShell-style
+  (`-List`, `-Wide`) with the same names as the shell twin's flags.
 - **What runs on a target host is POSIX-ish shell with no dependencies.** A
   fresh server is exactly where you cannot install a runtime first. What runs on
   your own machine or in CI may need `jq`, `curl` and the like; the module
@@ -116,6 +123,12 @@ the stub recorded and what the script printed.
   cleans up after itself. It may need what a developer machine has — bash,
   curl, python3, jq — and nothing else.
 - It picks a free port rather than a fixed one.
+- PowerShell suites are `*_test.ps1`. `./run-tests` runs them with `pwsh` when
+  it is installed; CI runs them on Windows under both 5.1 and 7. A suite ends
+  with an explicit `exit 0` — otherwise its exit code is whatever the last
+  deliberately failing command left behind.
+- A suite that does not apply to the platform it is on exits **77** and is
+  reported as skipped, never as passed.
 - **Check that it can fail**: break the behaviour it guards and watch it go red.
   A test that has never failed has not been shown to test anything. Say in the
   PR which mutations you tried.
@@ -142,6 +155,8 @@ Something not verified is said to be not verified, in the PR, with the reason.
   (`out="$(cmd)"`), then `read`.
 - Under `pipefail`, `producer | grep -q` can fail *after a match*: grep exits,
   the producer gets SIGPIPE. Capture the output, then test it.
+- `pwsh -Command '<script>' a b` does not pass `a b` to the script — it appends
+  them to the command and runs them. To hand PowerShell arguments, use `-File`.
 - `ssh` inside `while read` eats the loop's input; use `ssh -n`.
 - In zsh, `$var` does not word-split. Test harness loops belong in bash.
 

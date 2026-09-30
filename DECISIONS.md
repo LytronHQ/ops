@@ -8,6 +8,23 @@ A new decision is added here in the PR that makes it.
 
 ---
 
+### Windows: ops-get.ps1, PowerShell 5.1, ASCII, and a Windows CI job
+
+2026-09-30 · #44
+
+The first Windows module needed a way onto Windows with the same guarantees,
+so `ops-get.ps1` is a twin of `ops-get`: pinned, `SHA256SUMS` first, fail
+closed, `MANIFEST` verified, `-List` marking what does not run here. It targets
+Windows PowerShell 5.1 because that is what is on every Windows machine, and is
+tested under 5.1 and PowerShell 7 on GitHub's Windows runners — there is no
+Windows machine here, and a claim of `windows` needs one.
+
+Two things found on the way are now rules. PowerShell files are ASCII: 5.1
+reads BOM-less UTF-8 as Windows-1252, and the em dash in one of ops-get.ps1's
+error messages would have ended its string early. And `pwsh -Command` runs any
+extra arguments as part of the command: the first version of the release's
+parse check executed `ops-get.ps1` instead of parsing it.
+
 ### A result that is partly wrong is never saved as the whole
 
 2026-09-30 · #42
