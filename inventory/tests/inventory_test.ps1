@@ -95,7 +95,9 @@ try {
   $r = Invoke-Inventory -NoCache -Wide
   if ($r.Out[0] -notmatch 'EXPLICIT\s+SOURCE\s+UPDATE\s+SUMMARY') { Fail "wide header: $($r.Out[0])" }
   $r = Invoke-Inventory -NoCache -Format json -Pm choco
-  $j = @(($r.Out -join "`n") | ConvertFrom-Json)
+  # Piped on: Windows PowerShell 5.1's ConvertFrom-Json returns a JSON array as
+  # ONE object, where PowerShell 7 enumerates it.
+  $j = @(($r.Out -join "`n") | ConvertFrom-Json | ForEach-Object { $_ })
   if ($j.Count -ne 2 -or @($j[0].PSObject.Properties).Count -ne 10) { Fail "json: $($r.Out -join ' ')" }
   if (@(Get-Tsv -NoCache -Pm choco,scoop | Where-Object { $_.pm -notin 'choco', 'scoop' }).Count) { Fail '-Pm let others through' }
   if ((@(Get-Tsv -NoCache -Search 'VERSION CONTROL') | ForEach-Object { $_.name }) -join ',' -ne 'git') { Fail '-Search should match summaries, any case' }
