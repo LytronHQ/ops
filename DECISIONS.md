@@ -8,6 +8,19 @@ A new decision is added here in the PR that makes it.
 
 ---
 
+### Modules are named for the capability; the vendor is a provider
+
+2026-09-30 · #36
+
+`bws-env.sh` was named after Bitwarden's CLI and the file format it produced,
+`cf-access.sh` after an abbreviated vendor — both carried over from where they
+came from without being revisited. Names are now the operational capability,
+from this repository's point of view: `access/access.sh` gates a service,
+`secrets/secrets.sh` gets an environment's secrets. Cloudflare and Bitwarden
+became `--provider`, the same pattern as the OS for `harden.sh`: a future
+provider is a branch in the same script, not a new script and not a breaking
+change. Renamed scripts are a major version, v4.0.0.
+
 ### ops-get lists a release, explains what is missing, and takes flags
 
 2026-09-29 · #33

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# cf-access_test.sh — run cf-access.sh against a stub Cloudflare API and check
+# access_test.sh — run access.sh against a stub Cloudflare API and check
 # the things that are expensive to get wrong in production.
 #
-#   cloudflare/tests/cf-access_test.sh
+#   access/tests/access_test.sh
 #
 # What it asserts:
 #   1. a first run creates the app, ONE non_identity policy and the tokens, and
@@ -18,13 +18,13 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-SCRIPT="$HERE/../cf-access.sh"
+SCRIPT="$HERE/../access.sh"
 STATE="$(mktemp -d)"
 trap 'rm -rf "$STATE"; [ -n "${STUB_PID:-}" ] && kill "$STUB_PID" 2>/dev/null || true' EXIT
 
 PORT="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')"
 printf 'stub-api-token\n' > "$STATE/api-token"
-python3 "$HERE/cf_api_stub.py" "$PORT" "$STATE" stub-api-token &
+python3 "$HERE/cloudflare_api_stub.py" "$PORT" "$STATE" stub-api-token &
 STUB_PID=$!
 for _ in $(seq 1 50); do
   curl -fsS "http://127.0.0.1:${PORT}/health" >/dev/null 2>&1 && break
@@ -122,6 +122,8 @@ bad() { # expected-message flags… — must fail before any API call
 base=(--hostname x --account-id x --api-token-file "$STATE/api-token")
 bad "is not one of the --token names" "${base[@]}" --token a --rotate b
 bad "unknown argument '--bogus'"      "${base[@]}" --bogus
+bad "--provider 'aws' is not implemented" "${base[@]}" --provider aws
+out="$(run --provider cloudflare --token ci)" || fail "--provider cloudflare explicitly failed"
 bad "--hostname is required"          --account-id x --api-token-file "$STATE/api-token"
 bad "--api-token-file is required"    --hostname x --account-id x
 bad "cannot read"                     --hostname x --account-id x --api-token-file /nonexistent

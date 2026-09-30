@@ -7,8 +7,8 @@ self-contained file with no imports and nothing about my projects baked in.
 |---|---|---|---|
 | [`harden/`](harden/) | firewall, auto-updates, fail2ban, key-only SSH | the server you are configuring | `harden.sh` |
 | [`vmlab/`](vmlab/) | libvirt VMs without sudo: a throwaway lab or a single VM | your own machine | `vmlab.sh` |
-| [`cloudflare/`](cloudflare/) | Cloudflare Access for machines: app, policy, service tokens | your machine or CI | `cf-access.sh` |
-| [`bitwarden/`](bitwarden/) | an environment's config from Bitwarden Secrets Manager, ready to source | your machine or CI | `bws-env.sh` |
+| [`access/`](access/) | gate a hostname so only machines with a service token get through (Cloudflare) | your machine or CI | `access.sh` |
+| [`secrets/`](secrets/) | an environment's config from a secrets manager, ready to source (Bitwarden) | your machine or CI | `secrets.sh` |
 
 Every script is fetched the same way, whichever machine it runs on: `ops-get`
 downloads it from a pinned release and verifies its checksum. There is no second
@@ -26,12 +26,12 @@ A fresh server has `curl` and little else. `ops-get` fetches one script from a
 pinned release and verifies it before it ever runs.
 
 ```sh
-curl -fsSL https://github.com/LytronHQ/ops/releases/download/v3.0.0/ops-get -o ops-get
+curl -fsSL https://github.com/LytronHQ/ops/releases/download/v4.0.0/ops-get -o ops-get
 echo "ba1bf095a506f25a973847dc4be500a3482d4ec240842c130d658d412d2b8b8b  ops-get" | sha256sum -c
 chmod +x ops-get
 
-./ops-get --list v3.0.0                    # what this version has
-./ops-get harden.sh v3.0.0 /tmp/harden.sh
+./ops-get --list v4.0.0                    # what this version has
+./ops-get harden.sh v4.0.0 /tmp/harden.sh
 sudo /tmp/harden.sh
 ```
 
@@ -48,7 +48,7 @@ ops-get --list <version>
 | Argument | Required | Meaning |
 |---|---|---|
 | `<script>` | yes | the asset filename, e.g. `harden.sh`. No path — release assets are flat |
-| `<version>` | yes | a release tag, e.g. `v3.0.0`. There is deliberately no "latest" |
+| `<version>` | yes | a release tag, e.g. `v4.0.0`. There is deliberately no "latest" |
 | `[destination]` | no | where to write it. Default: `./<script>` |
 
 | Flag | Default | Meaning |
@@ -58,7 +58,7 @@ ops-get --list <version>
 | `--base-url <url>` | GitHub releases | the whole release URL, for a mirror or an air-gapped copy |
 | `-h`, `--help` | | print usage; so does running it with no arguments |
 
-Nothing is read from the environment. Before v3.0.0 the last two were the
+Nothing is read from the environment. Before v4.0.0 the last two were the
 `OPS_REPO` and `OPS_BASE_URL` variables; they are no longer read.
 
 Needs `curl` or `wget`, plus `sha256sum` or `shasum`. It is POSIX `sh`, because

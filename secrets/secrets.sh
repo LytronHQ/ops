@@ -1,15 +1,19 @@
 #!/usr/bin/env bash
 #
-# bws-env.sh — materialise an environment's configuration from Bitwarden
-# Secrets Manager: secrets from one or more projects, plus optional non-secret
+# secrets.sh — materialise an environment's configuration from a secrets
+# manager: secrets from one or more projects, plus optional non-secret
 # settings, as KEY='value' lines ready to source.
 #
-#   ./bws-env.sh --access-token-file ~/.config/bws/production \
+# Providers: bitwarden (Bitwarden Secrets Manager, through its `bws` CLI).
+# The capability is the name; the vendor is a --provider, the way the OS is
+# for harden.sh. Another provider is another branch here, not another script.
+#
+#   ./secrets.sh --access-token-file ~/.config/bws/production \
 #     --project <shared-project-id> --project <production-project-id> \
 #     --vars production.vars --out .env.production
 #
 #   # in CI, the machine account's token on stdin:
-#   printf '%s' "$BWS_ACCESS_TOKEN" | ./bws-env.sh --access-token-file - --project <id>
+#   printf '%s' "$BWS_ACCESS_TOKEN" | ./secrets.sh --access-token-file - --project <id>
 #
 #   set -a; . ./.env.production; set +a        # use it
 #
@@ -18,6 +22,8 @@
 # override anything shared. Each key appears once in the output, sorted.
 #
 # Options — every input is one; nothing is read from the environment:
+#   --provider <name>          where the secrets live: bitwarden (the default,
+#                              and the only one so far)
 #   --project <id>             a Secrets Manager project to read; repeatable,
 #                              later ones win (at least one required)
 #   --access-token-file <path> file holding the machine account's access
@@ -27,7 +33,7 @@
 #                              a comment. For settings that belong in git.
 #   --out <file>               write here, mode 0600, instead of stdout. Written
 #                              whole or not at all.
-#   --server-url <url>         a self-hosted Bitwarden server
+#   --server-url <url>         bitwarden: a self-hosted server
 #   -h, --help                 this text
 #
 # Values are single-quoted for the shell, so spaces, quotes, $, backticks and
@@ -35,7 +41,7 @@
 # is not a valid shell variable name stops the run, rather than breaking
 # whatever sources the output.
 #
-# Needs bws (Bitwarden's Secrets Manager CLI) and jq. Runs on a workstation or
+# Needs jq, and for bitwarden its `bws` CLI. Runs on a workstation or
 # in CI, not on a target host.
 set -euo pipefail
 # set -e does not reach inside $(…) without this; a failed bws call there
@@ -45,14 +51,15 @@ shopt -s inherit_errexit
 die() { echo "error: $*" >&2; exit 1; }
 usage() { sed -n '3,/^set -euo/p' "$0" | sed '$d; s/^# \{0,1\}//'; }
 
-PROJECTS=() TOKEN_FILE="" VARS="" OUT="" SERVER_URL=""
+PROVIDER="bitwarden" PROJECTS=() TOKEN_FILE="" VARS="" OUT="" SERVER_URL=""
 while [ $# -gt 0 ]; do
   case "$1" in --*=*) set -- "${1%%=*}" "${1#*=}" "${@:2}" ;; esac
   case "$1" in
-    --project|--access-token-file|--vars|--out|--server-url)
+    --provider|--project|--access-token-file|--vars|--out|--server-url)
       [ $# -ge 2 ] && [ -n "$2" ] || die "$1 needs a value (try --help)" ;;
   esac
   case "$1" in
+    --provider)          PROVIDER="$2"; shift 2 ;;
     --project)           PROJECTS+=("$2"); shift 2 ;;
     --access-token-file) TOKEN_FILE="$2"; shift 2 ;;
     --vars)              VARS="$2"; shift 2 ;;
@@ -62,6 +69,10 @@ while [ $# -gt 0 ]; do
     *)                   die "unknown argument '$1' (try --help)" ;;
   esac
 done
+case "$PROVIDER" in
+  bitwarden) ;;
+  *) die "--provider '$PROVIDER' is not implemented. Implemented: bitwarden" ;;
+esac
 [ "${#PROJECTS[@]}" -gt 0 ] || die "--project is required (the Secrets Manager project id)"
 [ -n "$TOKEN_FILE" ] || die "--access-token-file is required (a file, or - for stdin)"
 [ -z "$VARS" ] || [ -r "$VARS" ] || die "--vars: cannot read $VARS"
@@ -131,7 +142,7 @@ fi
 # leaves the previous file, never a truncated one, and the secrets are never
 # on disk with a wider mode than 0600.
 umask 077
-tmp="$(mktemp "$(dirname "$OUT")/.bws-env.XXXXXX")"
+tmp="$(mktemp "$(dirname "$OUT")/.secrets.XXXXXX")"
 trap 'rm -f "$tmp"' EXIT
 render >"$tmp"
 chmod 600 "$tmp"

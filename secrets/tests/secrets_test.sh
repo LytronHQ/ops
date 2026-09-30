@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# bws-env_test.sh — run bws-env.sh against a fake bws and check what is
+# secrets_test.sh — run secrets.sh against a fake bws and check what is
 # expensive to get wrong: a value mangled on the way to a service, the wrong
 # project winning, or a token leaking.
 #
-#   bitwarden/tests/bws-env_test.sh
+#   secrets/tests/secrets_test.sh
 #
 # What it asserts:
 #   1. awkward values (quotes, $, backticks, newlines, spaces) survive being
@@ -18,7 +18,7 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-SCRIPT="$HERE/../bws-env.sh"
+SCRIPT="$HERE/../secrets.sh"
 W="$(mktemp -d)"
 trap 'rm -rf "$W"' EXIT
 
@@ -95,7 +95,7 @@ run --project shared --out "$W/prod.env" 2>/dev/null
 cp "$W/prod.env" "$W/prod.before"
 run --project shared --project no-such-project --out "$W/prod.env" 2>/dev/null && fail "unreadable project succeeded"
 cmp -s "$W/prod.env" "$W/prod.before" || fail "a failed run changed the existing --out file"
-[ -z "$(find "$W" -maxdepth 1 -name '.bws-env.*')" ] || fail "a failed run left a temp file behind"
+[ -z "$(find "$W" -maxdepth 1 -name '.secrets.*')" ] || fail "a failed run left a temp file behind"
 
 echo "== the token: file or stdin, in bws's environment, never its argv =="
 : > "$W/bws/argv.log"
@@ -124,6 +124,8 @@ bad "cannot read"                    --access-token-file /nonexistent --project 
 : > "$W/empty-token"
 bad "is empty"                       --access-token-file "$W/empty-token" --project env
 bad "unknown argument '--bogus'"     --access-token-file "$W/token" --project env --bogus
+bad "--provider 'vault' is not implemented" --access-token-file "$W/token" --project env --provider vault
+run --provider bitwarden --project env >/dev/null || fail "--provider bitwarden explicitly failed"
 printf 'GOOD=1\nthis line has no equals\n' > "$W/broken.vars"
 bad "must be KEY=value"              --access-token-file "$W/token" --project env --vars "$W/broken.vars"
 PATH="/usr/bin:/bin" bad "bws not installed" --access-token-file "$W/token" --project env

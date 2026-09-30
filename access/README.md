@@ -1,24 +1,28 @@
-# cloudflare
+# access
 
-Put a hostname behind Cloudflare Access for machines: an Access application,
-one Service Auth policy, and the service tokens it admits. Replaces the
-dashboard walkthrough, and is safe to re-run.
+Gate a hostname so only machines holding a service token get through. Replaces
+the dashboard walkthrough, and is safe to re-run.
+
+**Providers:** `cloudflare` — Cloudflare Access: an Access application, one
+Service Auth policy, and the service tokens it admits. The module is named for
+what it does; who does it is `--provider`, so another provider would be a new
+branch in the same script, not a new script.
 
 **Runs on:** your workstation or CI — wherever the secrets it prints need to
 end up. Not on a target host.
-**Needs:** bash 4.4+, `curl`, `jq`, and an API token with **Access: Apps and
+**Needs:** bash 4.4+, `curl`, `jq`, and for `cloudflare` an API token with **Access: Apps and
 Policies Write** and **Access: Service Tokens Edit** (both account-level).
 
 ## Get it
 
 ```sh
-./ops-get cf-access.sh v3.0.0
+./ops-get access.sh v4.0.0
 ```
 
 ## Use it
 
 ```sh
-./cf-access.sh --hostname api.example.com --account-id <account id> \
+./access.sh --hostname api.example.com --account-id <account id> \
   --api-token-file ~/.config/cloudflare/token \
   --token ci --token backup > credentials.env
 ```
@@ -26,7 +30,7 @@ Policies Write** and **Access: Service Tokens Edit** (both account-level).
 In CI, where the API token is already a secret variable, hand it over on stdin:
 
 ```sh
-printf '%s' "$CF_API_TOKEN" | ./cf-access.sh --api-token-file - --hostname … --account-id … --token ci
+printf '%s' "$CF_API_TOKEN" | ./access.sh --api-token-file - --hostname … --account-id … --token ci
 ```
 
 The first run creates everything and prints, for each token:
@@ -52,8 +56,9 @@ environment. Unknown flags and missing values stop the run before any API call.
 
 | Flag | Default | Meaning |
 |---|---|---|
+| `--provider <name>` | `cloudflare` | who provides the gate. Only `cloudflare` is implemented; anything else is refused before any API call |
 | `--hostname <host>` | required | the hostname to protect, e.g. `api.example.com` |
-| `--account-id <id>` | required | Cloudflare account id |
+| `--account-id <id>` | required | `cloudflare`: account id |
 | `--api-token-file <path>` | required | a file holding the API token, or `-` to read it from stdin. Never the token itself as a value: a command line is readable by every user through `ps`. The script passes it on to `curl` through a file descriptor, not as an argument, for the same reason |
 | `--token <name>` | `<app name>-client` | a service token this run manages, created if missing. Repeatable. In the output, the name becomes upper case with anything not `A-Z0-9` turned into `_` |
 | `--rotate <name>` | none | rotate one of the `--token` names: a new secret is printed and **the old one stops working immediately**. Repeatable. Naming a token that is not a `--token` is refused |
@@ -92,8 +97,8 @@ Each of these happened where this script came from.
 
 ## Tests
 
-`tests/cf-access_test.sh` runs this script against a stub of the Access API
-(`tests/cf_api_stub.py`): first run, idempotent re-run, partial runs keeping
+`tests/access_test.sh` runs this script against a stub of the Access API
+(`tests/cloudflare_api_stub.py`): first run, idempotent re-run, partial runs keeping
 other tokens, a deleted token dropping out, scoped rotation, a run dying after a
 mint, the second-policy guard, bad input, and that the API token is read from
 the file or stdin and sent.

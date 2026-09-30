@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""A stub of the Cloudflare Access endpoints cf-access.sh calls.
+"""A stub of the Cloudflare Access endpoints access.sh calls.
 
-It exists so cf-access_test.sh can run the REAL script — its jq pipelines, its
+It exists so access_test.sh can run the REAL script — its jq pipelines, its
 reuse branches, its guard against a second policy — instead of a
 re-implementation. State lives in JSON files so the test can inspect what was
 created and tamper with it.
