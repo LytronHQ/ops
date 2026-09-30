@@ -26,12 +26,12 @@ A fresh server has `curl` and little else. `ops-get` fetches one script from a
 pinned release and verifies it before it ever runs.
 
 ```sh
-curl -fsSL https://github.com/LytronHQ/ops/releases/download/v4.0.0/ops-get -o ops-get
-echo "ba1bf095a506f25a973847dc4be500a3482d4ec240842c130d658d412d2b8b8b  ops-get" | sha256sum -c
+curl -fsSL https://github.com/LytronHQ/ops/releases/download/v4.1.0/ops-get -o ops-get
+echo "841b8f34d7d4481f966f1026e935c770291d2f82cac13eebd7cf1c0944f63081  ops-get" | sha256sum -c
 chmod +x ops-get
 
-./ops-get --list v4.0.0                    # what this version has
-./ops-get harden.sh v4.0.0 /tmp/harden.sh
+./ops-get --list v4.1.0                    # what this version has
+./ops-get harden.sh v4.1.0 /tmp/harden.sh
 sudo /tmp/harden.sh
 ```
 
@@ -48,17 +48,17 @@ ops-get --list <version>
 | Argument | Required | Meaning |
 |---|---|---|
 | `<script>` | yes | the asset filename, e.g. `harden.sh`. No path — release assets are flat |
-| `<version>` | yes | a release tag, e.g. `v4.0.0`. There is deliberately no "latest" |
+| `<version>` | yes | a release tag, e.g. `v4.1.0`. There is deliberately no "latest" |
 | `[destination]` | no | where to write it. Default: `./<script>` |
 
 | Flag | Default | Meaning |
 |---|---|---|
-| `--list <version>` | | print the scripts in that version — the ones its `SHA256SUMS` vouches for |
+| `--list <version>` | | print the scripts in that version — the ones its `SHA256SUMS` vouches for. A script that does not run on this machine is still listed, marked `unsupported on <platform> (runs on: …)`, from the release's `MANIFEST`. Releases before v4.1.0 have no `MANIFEST`, and nothing is marked |
 | `--repo <owner/name>` | `LytronHQ/ops` | whose releases to fetch from — point it at your fork |
 | `--base-url <url>` | GitHub releases | the whole release URL, for a mirror or an air-gapped copy |
 | `-h`, `--help` | | print usage; so does running it with no arguments |
 
-Nothing is read from the environment. Before v4.0.0 the last two were the
+Nothing is read from the environment. Before v4.1.0 the last two were the
 `OPS_REPO` and `OPS_BASE_URL` variables; they are no longer read.
 
 Needs `curl` or `wget`, plus `sha256sum` or `shasum`. It is POSIX `sh`, because
@@ -75,6 +75,11 @@ It refuses, leaving nothing behind, when:
   or was published minutes ago and is not served yet, or has no checksums
 - the script is not listed in it; the error names the scripts that are
 - the hash does not match; the error prints both
+- the release's `MANIFEST` does not match `SHA256SUMS` — it says where scripts
+  run, so an unverified one is a claim nobody checked
+
+Fetching a script that does not run on this machine still works — it may be
+for another machine — with a note saying so.
 
 A provisioning run that stops loudly beats one that quietly configures a host
 with the wrong bytes.
@@ -93,31 +98,27 @@ one problem for a worse one.
 
 ## Releasing
 
-A release is every script as a flat asset, `ops-get`, and the `SHA256SUMS` that
-`ops-get` verifies against. Nothing is consumable from a branch on purpose: a
+A release is every script as a flat asset, `ops-get`, a `MANIFEST`, and the
+`SHA256SUMS` that `ops-get` verifies against. Nothing is consumable from a branch on purpose: a
 consumer pins a version or does not run at all.
 
 Script filenames must be unique across the whole repo, since assets are flat.
 Anything under a `tests/` directory is never an asset. Working on the repo —
 module shape, tests — is in [CONTRIBUTING.md](CONTRIBUTING.md).
 
-`.github/workflows/release.yml` does all of this when a `v*` tag is pushed. When
-Actions is unavailable, build the same thing locally from a clean checkout of
-the tag:
+`./build-release` builds exactly that into `dist/`, plus a `MANIFEST` of where
+each script runs, from its `# platforms:` line. The release workflow runs it
+when a `v*` tag is pushed. When Actions is unavailable, run it yourself from a
+clean checkout of the tag:
 
 ```sh
-for f in $(find . -name '*.sh' -not -path './.git/*') ops-get; do
-  sh -n "$f" 2>/dev/null || bash -n "$f" || echo "does not parse: $f"
-done
 ./run-tests
-find . -mindepth 2 -name '*.sh' -not -path './.git/*' -not -path '*/tests/*' -printf '%f\n' | sort | uniq -d   # must print nothing
-
-rm -rf dist && mkdir dist
-find . -mindepth 2 -name '*.sh' -not -path './.git/*' -not -path './dist/*' -not -path '*/tests/*' -exec cp {} dist/ \;
-cp ops-get dist/
-(cd dist && sha256sum * > SHA256SUMS)
+./build-release
 gh release create vX.Y.Z dist/* --verify-tag --title vX.Y.Z --notes "..."
 ```
+
+It refuses to build when a script does not parse, has no `# platforms:` line,
+or shares a name with another module's script.
 
 If a release changes `ops-get`, update its hash in the quick start above in
 the same commit.

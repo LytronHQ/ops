@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+#
+# build-release — build a release's assets from this checkout: every script as
+# a flat file, ops-get, MANIFEST and SHA256SUMS. The release workflow runs it,
+# and so does a person when Actions is unavailable, so there is one set of
+# release rules rather than two copies that drift.
+#
+#   ./build-release [--out <dir>]      (default: dist)
+#
+# It refuses, building nothing, when:
+#   - a script does not parse
+#   - two modules have a script with the same name (assets are flat)
+#   - a script has no "# platforms:" line, or names an unknown platform
+#
+# MANIFEST has one line per asset: "<script> <platform>…", from each script's
+# "# platforms:" header. ops-get --list reads it to mark what does not run on
+# the machine asking. It is listed in SHA256SUMS like everything else, so the
+# marks are as verified as the scripts.
+set -euo pipefail
+shopt -s inherit_errexit
+
+die() { echo "build-release: $*" >&2; exit 1; }
+cd "$(dirname "$0")"
+
+OUT="dist"
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --out)     [ $# -ge 2 ] && [ -n "$2" ] || die "--out needs a value"; OUT="$2"; shift 2 ;;
+    -h|--help) sed -n '3,/^set -euo/p' "$0" | sed '$d; s/^# \{0,1\}//'; exit 0 ;;
+    *)         die "unknown argument '$1'" ;;
+  esac
+done
+
+# What `uname` can tell ops-get about the machine it runs on.
+KNOWN_PLATFORMS="linux macos windows"
+
+# The assets: ops-get, and every module script. Tests and their stubs are for
+# working on the repo, never assets.
+mapfile -t SCRIPTS < <(find . -mindepth 2 -name '*.sh' -not -path './.git/*' \
+  -not -path "./${OUT#./}/*" -not -path '*/tests/*' | sort)
+SCRIPTS=(./ops-get "${SCRIPTS[@]}")
+
+for f in "${SCRIPTS[@]}"; do
+  sh -n "$f" 2>/dev/null || bash -n "$f" || die "$f does not parse"
+done
+
+dupes="$(for f in "${SCRIPTS[@]}"; do basename "$f"; done | sort | uniq -d)"
+[ -z "$dupes" ] || die "two modules have a script with the same name, and assets are flat: $dupes"
+
+manifest=""
+for f in "${SCRIPTS[@]}"; do
+  plats="$(sed -n 's/^# platforms:[[:space:]]*//p' "$f" | head -1)"
+  [ -n "$plats" ] || die "$f has no '# platforms:' line — say where it runs"
+  for p in $plats; do
+    case " $KNOWN_PLATFORMS " in *" $p "*) ;; *) die "$f: unknown platform '$p' (known: $KNOWN_PLATFORMS)" ;; esac
+  done
+  manifest+="$(basename "$f") $plats"$'\n'
+done
+
+# It replaces --out wholesale, so it only ever replaces a previous build: an
+# empty directory, or one holding a SHA256SUMS. `--out .` must not mean
+# "delete the repository".
+if [ -e "$OUT" ]; then
+  [ -d "$OUT" ] || die "--out $OUT exists and is not a directory"
+  [ -z "$(ls -A "$OUT")" ] || [ -f "$OUT/SHA256SUMS" ] \
+    || die "--out $OUT is not empty and not a previous build; refusing to replace it"
+  rm -rf "${OUT:?}"
+fi
+mkdir -p "$OUT"
+for f in "${SCRIPTS[@]}"; do cp "$f" "$OUT/"; done
+printf '%s' "$manifest" > "$OUT/MANIFEST"
+(cd "$OUT" && sha256sum -- * > SHA256SUMS)
+cat "$OUT/SHA256SUMS"

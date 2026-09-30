@@ -3,6 +3,8 @@
 # harden.sh — bring a fresh Linux host to a sane baseline. Idempotent; safe to
 # run again to re-apply.
 #
+# platforms: linux
+#
 #   sudo ./harden.sh [options]
 #   sudo ./harden.sh --allow 10.0.0.0/16:5432 --allow 203.0.113.4:8090/udp
 #

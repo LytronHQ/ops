@@ -16,7 +16,7 @@ jobs:
       - name: Check every script parses
         run: |
           fail=0
-          for f in $(find . -name '*.sh' -not -path './.git/*') ops-get run-tests; do
+          for f in $(find . -name '*.sh' -not -path './.git/*') ops-get run-tests build-release; do
             sh -n "$f" 2>/dev/null || bash -n "$f" || { echo "::error::$f does not parse"; fail=1; }
           done
           exit $fail
