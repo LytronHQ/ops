@@ -13,6 +13,7 @@ self-contained file with no imports and nothing about my projects baked in.
 | [`inventory/`](inventory/) | installed software, and which package manager put it there | the machine being inspected, Linux or Windows | `inventory.sh`, `inventory.ps1` |
 | [`cleanup/`](cleanup/) | reclaim disk space: package caches, old temp files, journal, logs, dumps — reports first | the machine being cleaned, Linux or Windows | `cleanup.sh`, `cleanup.ps1` |
 | [`upgrade/`](upgrade/) | upgrade a containerised service, snapshot first, roll back image and data on failure | the host running it | `upgrade.sh` |
+| [`database/`](database/) | routine SQLite maintenance: checkpoint, bounded vacuum, the app's backup, a heartbeat | the host with the database | `database.sh` |
 
 Every script is fetched the same way, whichever machine it runs on: `ops-get`
 downloads it from a pinned release and verifies its checksum. There is no second
