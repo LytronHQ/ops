@@ -1,66 +1,84 @@
 #!/usr/bin/env bash
 #
-# database.sh — routine maintenance of a database, run unattended (a systemd
-# timer, cron). For SQLite: fold the WAL back, reclaim a bounded number of free
-# pages, optionally have the application take a backup, and ping a heartbeat
-# only when all of it worked.
+# db.sh — looking after a database, unattended: from a timer or cron.
 #
 # platforms: linux
 #
-#   ./database.sh maintain --db /var/lib/app/app.db
-#   ./database.sh maintain --container pocketbase --db /pb_data/data.db \
-#     --app pocketbase --credentials-file /etc/pb/pb.env \
-#     --heartbeat-url-file /etc/pb/heartbeat.url
+#   ./db.sh maintain --db /var/lib/app/app.db
+#   ./db.sh <action> --help        every option of that action
 #
-# maintain, in this order — and the order is load-bearing:
-#   1. PRAGMA wal_checkpoint(TRUNCATE): fold the WAL into the main file and
-#      reset it, so a backup does not depend on WAL state and the WAL cannot
-#      grow without bound. Blocked by a reader mid-transaction, it says so and
-#      the next run catches up.
-#   2. PRAGMA incremental_vacuum(N): reclaim at most N free pages, so every run
-#      is short. After the checkpoint, or the pages are still in the WAL.
-#      Skipped, and said so, unless the database is in INCREMENTAL auto-vacuum
-#      mode: converting needs a full VACUUM, which rewrites the whole file under
-#      an exclusive lock — a maintenance-window job, never a timer's.
-#   3. With --app pocketbase: a backup through PocketBase's own API, so it is
-#      consistent and restores the normal way. After the vacuum, or the archive
-#      carries the dead pages.
-#   4. With --heartbeat-url-file: a ping, only when everything above worked. A
-#      silent failure looks like no failure on a host nobody watches; the monitor
-#      alerts on the ping's absence instead.
-#
-# Deliberately absent: a recurring full VACUUM, and backup retention — the
-# backup destination's own lifecycle prunes it, and two policies on one bucket
-# is how backups get deleted early.
-#
-# Options — every input is one; nothing is read from the environment:
-#   --engine <name>            sqlite (the default, and the only one so far)
-#   --db <path>                the database file (required); inside the
-#                              container with --container
-#   --container <name>         run sqlite3 inside this running container
-#   --vacuum-pages <n>         most free pages reclaimed per run (default 20000,
-#                              about 80 MiB of 4 KiB pages)
-#   --busy-ms <ms>             wait this long for a write lock before giving up
-#                              (default 15000)
-#   --app <name>               the application, for its backup: pocketbase
-#   --url <url>                pocketbase: base URL (default http://127.0.0.1:8090)
-#   --credentials-file <file>  pocketbase: PB_SUPERUSER_EMAIL / _PASSWORD lines
-#   --backup-prefix <name>     pocketbase: backup name prefix (default backup)
-#   --no-backup                skip the backup
-#   --heartbeat-url-file <f>   file holding the heartbeat URL. A file, not a
-#                              value: anyone holding the URL can fake the ping
-#   -h, --help                 this text
-#
-# Needs bash, curl, and sqlite3 on the host or in the container.
+# Actions:
+#   maintain   SQLite: fold the WAL back, reclaim a bounded number of free
+#              pages, have the application take a backup, ping a heartbeat
 set -euo pipefail
 shopt -s inherit_errexit
 
+# ============================================================================
+# db.sh maintain
+# ============================================================================
+
+help_maintain() {
+cat <<'HELP_END'
+db.sh maintain — routine maintenance of a database, run unattended (a systemd
+timer, cron). For SQLite: fold the WAL back, reclaim a bounded number of free
+pages, optionally have the application take a backup, and ping a heartbeat
+only when all of it worked.
+
+
+  ./db.sh maintain --db /var/lib/app/app.db
+  ./db.sh maintain --container pocketbase --db /pb_data/data.db \
+    --app pocketbase --credentials-file /etc/pb/pb.env \
+    --heartbeat-url-file /etc/pb/heartbeat.url
+
+maintain, in this order — and the order is load-bearing:
+  1. PRAGMA wal_checkpoint(TRUNCATE): fold the WAL into the main file and
+     reset it, so a backup does not depend on WAL state and the WAL cannot
+     grow without bound. Blocked by a reader mid-transaction, it says so and
+     the next run catches up.
+  2. PRAGMA incremental_vacuum(N): reclaim at most N free pages, so every run
+     is short. After the checkpoint, or the pages are still in the WAL.
+     Skipped, and said so, unless the database is in INCREMENTAL auto-vacuum
+     mode: converting needs a full VACUUM, which rewrites the whole file under
+     an exclusive lock — a maintenance-window job, never a timer's.
+  3. With --app pocketbase: a backup through PocketBase's own API, so it is
+     consistent and restores the normal way. After the vacuum, or the archive
+     carries the dead pages.
+  4. With --heartbeat-url-file: a ping, only when everything above worked. A
+     silent failure looks like no failure on a host nobody watches; the monitor
+     alerts on the ping's absence instead.
+
+Deliberately absent: a recurring full VACUUM, and backup retention — the
+backup destination's own lifecycle prunes it, and two policies on one bucket
+is how backups get deleted early.
+
+Options — every input is one; nothing is read from the environment:
+  --engine <name>            sqlite (the default, and the only one so far)
+  --db <path>                the database file (required); inside the
+                             container with --container
+  --container <name>         run sqlite3 inside this running container
+  --vacuum-pages <n>         most free pages reclaimed per run (default 20000,
+                             about 80 MiB of 4 KiB pages)
+  --busy-ms <ms>             wait this long for a write lock before giving up
+                             (default 15000)
+  --app <name>               the application, for its backup: pocketbase
+  --url <url>                pocketbase: base URL (default http://127.0.0.1:8090)
+  --credentials-file <file>  pocketbase: PB_SUPERUSER_EMAIL / _PASSWORD lines
+  --backup-prefix <name>     pocketbase: backup name prefix (default backup)
+  --no-backup                skip the backup
+  --heartbeat-url-file <f>   file holding the heartbeat URL. A file, not a
+                             value: anyone holding the URL can fake the ping
+  -h, --help                 this text
+
+Needs bash, curl, and sqlite3 on the host or in the container.
+HELP_END
+}
+
+action_maintain() {
+
 log() { echo "[database $(date -u +%FT%TZ)] $*" >&2; }
 die() { log "ERROR: $*"; exit 1; }
-usage() { sed -n '3,/^set -euo/p' "$0" | sed '$d; s/^# \{0,1\}//'; }
+usage() { help_maintain; }
 
-CMD="${1:-}"; [ $# -gt 0 ] && shift
-case "$CMD" in -h|--help|"") usage; [ -n "$CMD" ]; exit $? ;; maintain) ;; *) die "unknown command '$CMD'. Commands: maintain" ;; esac
 
 ENGINE="sqlite" DB="" CONTAINER="" PAGES=20000 BUSY=15000 APP="" URL="" CREDS="" PREFIX="backup" BACKUP=1 HB=""
 while [ $# -gt 0 ]; do
@@ -170,3 +188,14 @@ if [ -n "$HB" ]; then
   fi
 fi
 log "maintenance complete"
+}
+
+# ============================================================================
+
+subject_usage() { sed -n '3,/^set -euo/p' "$0" | sed '$d; s/^# \{0,1\}//'; }
+case "${1:-}" in
+  maintain) shift; action_maintain "$@" ;;
+  -h|--help|help) subject_usage ;;
+  "") subject_usage >&2; exit 1 ;;
+  *) echo "db.sh: unknown action '$1'. Actions: maintain" >&2; exit 1 ;;
+esac

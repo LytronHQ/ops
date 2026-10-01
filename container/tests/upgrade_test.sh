@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# upgrade_test.sh — run upgrade.sh against a fake docker and a health stub,
+# upgrade_test.sh — run container.sh upgrade against a fake docker and a health stub,
 # and check the branches that decide whether data survives.
 #
 #   upgrade/tests/upgrade_test.sh
@@ -20,7 +20,7 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-SCRIPT="$HERE/../upgrade.sh"
+SCRIPT="$HERE/../container.sh"
 W="$(mktemp -d)"
 trap 'rm -rf "$W"; [ -n "${STUB_PID:-}" ] && kill "$STUB_PID" 2>/dev/null || true' EXIT
 fail() { echo "FAIL: $*" >&2; exit 1; }
@@ -65,7 +65,7 @@ STUB_PID=$!
 for _ in $(seq 1 50); do curl -fsS "http://127.0.0.1:$PORT/" >/dev/null 2>&1 && break; sleep 0.1; done
 touch "$W/compose.yml"
 
-run() { PATH="$W/bin:$PATH" bash "$SCRIPT" --compose "$W/compose.yml" --service app --version-var APPV \
+run() { PATH="$W/bin:$PATH" bash "$SCRIPT" upgrade --compose "$W/compose.yml" --service app --version-var APPV \
           --env-file "$W/app.env" --data /data --expect data.db --snapshots "$W/snaps" \
           --health-url "http://127.0.0.1:$PORT/health" --health-retries 2 --helper-image fake "$@" 2>"$W/stderr"; }
 data() { cat "$FAKE_DOCKER/volumes/$(cat "$FAKE_DOCKER/mount")/data.db"; }
@@ -125,7 +125,7 @@ for v in 2 3 4 5; do run --to "$v.0" --keep 2 || fail "upgrade to $v.0: $(cat "$
 [ "$(ls "$W/snaps" | wc -l)" = 2 ] || fail "--keep 2 left $(ls "$W/snaps" | wc -l)"
 
 echo "== bad input =="
-bad() { local want="$1" out; shift; out="$(PATH="$W/bin:$PATH" bash "$SCRIPT" "$@" 2>&1)" && fail "accepted: $*"; grep -q -- "$want" <<<"$out" || fail "$*: $out"; }
+bad() { local want="$1" out; shift; out="$(PATH="$W/bin:$PATH" bash "$SCRIPT" upgrade "$@" 2>&1)" && fail "accepted: $*"; grep -q -- "$want" <<<"$out" || fail "$*: $out"; }
 bad "--to is required"       --compose "$W/compose.yml" --service app --data /d --health-url http://x
 bad "--health-url is required" --compose "$W/compose.yml" --service app --to 2 --data /d
 bad "is not a version"       --compose "$W/compose.yml" --service app --to 'a b' --data /d --health-url http://x

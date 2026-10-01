@@ -61,11 +61,11 @@ VARS_ONLY=plain value with = sign
 LOG_LEVEL=info
 VARS
 
-run() { bash "$SCRIPT" --access-token-file "$W/token" "$@"; }
+run() { bash "$SCRIPT" env --access-token-file "$W/token" "$@"; }
 fail() { echo "FAIL: $*" >&2; exit 1; }
 bad() { # expected-message args… — must fail
   local want="$1" out; shift
-  out="$(bash "$SCRIPT" "$@" 2>&1 </dev/null)" && fail "accepted: $*"
+  out="$(bash "$SCRIPT" env "$@" 2>&1 </dev/null)" && fail "accepted: $*"
   grep -q -- "$want" <<<"$out" || fail "$*: expected '$want', got: $out"
 }
 
@@ -99,7 +99,7 @@ cmp -s "$W/prod.env" "$W/prod.before" || fail "a failed run changed the existing
 
 echo "== the token: file or stdin, in bws's environment, never its argv =="
 : > "$W/bws/argv.log"
-out="$(printf 'machine-token-123' | bash "$SCRIPT" --access-token-file - --project env)" \
+out="$(printf 'machine-token-123' | bash "$SCRIPT" env --access-token-file - --project env)" \
   || fail "--access-token-file - (stdin) did not work"
 grep -q '^ENV_ONLY=' <<<"$out" || fail "stdin run printed nothing useful"
 grep -q 'machine-token' "$W/bws/argv.log" && fail "the token was passed to bws as an argument"
