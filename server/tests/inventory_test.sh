@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# inventory_test.sh — run inventory.sh against a fake system under --root and
+# inventory_test.sh — run server.sh inventory against a fake system under --root and
 # check what it reports: which package manager, installed on purpose or not,
 # updates, the saved list and its rules.
 #
@@ -23,7 +23,7 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-SCRIPT="$HERE/../inventory.sh"
+SCRIPT="$HERE/../server.sh"
 W="$(mktemp -d)"
 trap 'rm -rf "$W"' EXIT
 fail() { echo "FAIL: $*" >&2; exit 1; }
@@ -127,7 +127,7 @@ EOF
 printf '#!/bin/sh\necho vim-enhanced\n' > "$W/rpmbin/dnf"
 chmod +x "$W/rpmbin/rpm" "$W/rpmbin/dnf"
 
-inv() { bash "$SCRIPT" --root "$R" "$@" 2>"$W/stderr"; }
+inv() { bash "$SCRIPT" inventory --root "$R" "$@" 2>"$W/stderr"; }
 row() { # name -> its tsv row
   inv --format tsv "$@" | awk -F'\t' -v n="$ROWNAME" '$1 == n'
 }
@@ -169,7 +169,7 @@ grep -q '^gpg-pubkey' <<<"$out"                         && fail "a signing key w
 echo "== a package database that cannot be read =="
 mkdir -p "$W/badrpm"; printf '#!/bin/sh\necho "error: rpmdb: damaged" >&2; exit 1\n' > "$W/badrpm/rpm"; chmod +x "$W/badrpm/rpm"
 rm -f "$W/partial.tsv"
-out="$(PATH="$W/badrpm:$PATH" bash "$SCRIPT" --root "$R" --cache "$W/partial.tsv" --format tsv 2>"$W/stderr")" \
+out="$(PATH="$W/badrpm:$PATH" bash "$SCRIPT" inventory --root "$R" --cache "$W/partial.tsv" --format tsv 2>"$W/stderr")" \
   && fail "a failed package manager did not fail the run"
 grep -q "could not read rpm" "$W/stderr"      || fail "the failure was not named: $(cat "$W/stderr")"
 grep -q $'^fromrepo\t' <<<"$out"              || fail "the rest of the list was lost"
@@ -218,7 +218,7 @@ inv --cache "$W/notes.txt" >/dev/null && fail "read a file that is not an invent
 inv --cache "$W/notes.txt" --refresh >/dev/null
 [ "$(cat "$W/notes.txt")" = precious ]                 || fail "overwrote a file that is not an inventory"
 # Another machine's list must not replace this one's: --root alone saves nothing.
-XDG_CACHE_HOME="$W/xdg" bash "$SCRIPT" --root "$R" >/dev/null 2>"$W/stderr"
+XDG_CACHE_HOME="$W/xdg" bash "$SCRIPT" inventory --root "$R" >/dev/null 2>"$W/stderr"
 [ ! -e "$W/xdg/ops/inventory.tsv" ]                    || fail "--root without --cache wrote the default saved list"
 grep -q "inventory of $R" "$W/stderr"                  || fail "--root did not say what it inspected"
 
@@ -229,7 +229,7 @@ grep -q "cannot be told apart" "$W/stderr"             || fail "no note about th
 mv "$W/lists.away" "$LISTS"
 
 echo "== bad input =="
-bad() { local want="$1" out; shift; out="$(bash "$SCRIPT" "$@" 2>&1)" && fail "accepted: $*"; grep -q -- "$want" <<<"$out" || fail "$*: $out"; }
+bad() { local want="$1" out; shift; out="$(bash "$SCRIPT" inventory "$@" 2>&1)" && fail "accepted: $*"; grep -q -- "$want" <<<"$out" || fail "$*: $out"; }
 bad "--format 'html'"            --no-cache --format html
 bad "--pm 'npm'"                 --no-cache --pm npm
 bad "unknown argument '--bogus'" --no-cache --bogus

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A stub of the Cloudflare Access endpoints access.sh calls.
+"""A stub of the Cloudflare Access endpoints edge.sh access calls.
 
 It exists so access_test.sh can run the REAL script — its jq pipelines, its
 reuse branches, its guard against a second policy — instead of a

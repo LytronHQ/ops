@@ -88,7 +88,7 @@ per-distribution scripts: `ops-get` verifies exactly one file.
   Not the tool it wraps (`bws`, `virsh`), not the vendor (Bitwarden,
   Cloudflare), not the form of its output (an env file). The module folder and
   the script share that name.
-- **The vendor is a `--provider`**, as the OS is for `harden.sh`: a branch
+- **The vendor is a `--provider`**, as the OS is for `server.sh harden`: a branch
   inside the one script, defaulting to the one implemented and refusing the
   rest. Flags only one provider uses are documented as that provider's.
 - **Names are unique across the whole repo**: release assets are flat, and the

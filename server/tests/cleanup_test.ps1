@@ -1,5 +1,5 @@
 #
-# cleanup_test.ps1 - run cleanup.ps1 on a real Windows and check that it
+# cleanup_test.ps1 - run server.ps1 cleanup on a real Windows and check that it
 # removes exactly the junk, and nothing else. Windows only: elsewhere it exits
 # 77 and is reported as skipped.
 #
@@ -23,7 +23,7 @@
 $ErrorActionPreference = 'Stop'
 if (-not ($PSVersionTable.PSEdition -ne 'Core' -or $IsWindows)) { 'Windows only'; exit 77 }
 
-$script = Join-Path (Split-Path -Parent (Split-Path -Parent $PSCommandPath)) 'cleanup.ps1'
+$script = Join-Path (Split-Path -Parent (Split-Path -Parent $PSCommandPath)) 'server.ps1'
 $engine = (Get-Process -Id $PID).Path
 $work = Join-Path ([IO.Path]::GetTempPath()) ("cleanup-test-" + [Guid]::NewGuid().ToString('N'))
 $sysFile = Join-Path $env:SystemRoot ("Temp\ops-cleanup-test-" + [Guid]::NewGuid().ToString('N') + '.tmp')
@@ -33,7 +33,7 @@ function Fail([string] $m) { [Console]::Error.WriteLine("FAIL: $m"); exit 1 }
 function Invoke-Cleanup {
   $err = Join-Path $work 'stderr.txt'
   $old = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-  $out = & $engine -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $script @args 2> $err
+  $out = & $engine -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $script cleanup @args 2> $err
   $code = $LASTEXITCODE
   $ErrorActionPreference = $old
   return @{ Code = $code; Out = @($out); Err = ((Get-Content -LiteralPath $err -ErrorAction SilentlyContinue) -join "`n") }

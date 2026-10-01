@@ -30,7 +30,7 @@ cat <<'HELP_END'
 edge.sh tunnel — make a private service reachable at a hostname through a tunnel,
 without opening a port: create, or find, the tunnel, point its ingress at the
 service, publish the hostname, and print the connector token. Idempotent;
-safe to re-run. With access.sh in front, only machines holding a service
+safe to re-run. With edge.sh access in front, only machines holding a service
 token get through.
 
 
@@ -201,7 +201,7 @@ cf PUT "/accounts/${ACCOUNT_ID}/cfd_tunnel/${TUNNEL_ID}/configurations" \
 # Proxied, always: an unproxied record would publish the tunnel's address and
 # skip everything Cloudflare puts in front of it, Access included.
 TARGET="${TUNNEL_ID}.cfargotunnel.com"
-BODY="$(jq -nc --arg n "$HOSTNAME_" --arg c "$TARGET" '{type: "CNAME", name: $n, content: $c, proxied: true, comment: "tunnel.sh"}')"
+BODY="$(jq -nc --arg n "$HOSTNAME_" --arg c "$TARGET" '{type: "CNAME", name: $n, content: $c, proxied: true, comment: "edge.sh tunnel"}')"
 OURS=""
 while read -r r; do
   [ -n "$r" ] || continue
@@ -242,7 +242,7 @@ through. Idempotent; safe to re-run. Replaces the dashboard walkthrough.
 Providers: cloudflare (Cloudflare Access) — creates, or finds, the Access
 application, ONE Service Auth policy, and the service tokens it admits.
 The capability is the name; the vendor is a --provider, the way the OS is
-for harden.sh. Another provider is another branch here, not another script.
+for server.sh harden. Another provider is another branch here, not another script.
 
   ./edge.sh access --hostname api.example.com --account-id <id> \
     --api-token-file ~/.config/cloudflare/token --token ci --token backup

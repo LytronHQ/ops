@@ -1,5 +1,5 @@
 #
-# inventory_test.ps1 - run inventory.ps1 on a real Windows and check what it
+# inventory_test.ps1 - run server.ps1 inventory on a real Windows and check what it
 # reports. Windows only: elsewhere it exits 77 and is reported as skipped.
 #
 #   powershell -File inventory\tests\inventory_test.ps1
@@ -20,7 +20,7 @@
 $ErrorActionPreference = 'Stop'
 if (-not ($PSVersionTable.PSEdition -ne 'Core' -or $IsWindows)) { 'Windows only'; exit 77 }
 
-$inv = Join-Path (Split-Path -Parent (Split-Path -Parent $PSCommandPath)) 'inventory.ps1'
+$inv = Join-Path (Split-Path -Parent (Split-Path -Parent $PSCommandPath)) 'server.ps1'
 $engine = (Get-Process -Id $PID).Path
 $work = Join-Path ([IO.Path]::GetTempPath()) ("inventory-test-" + [Guid]::NewGuid().ToString('N'))
 $uninstall = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall'
@@ -30,7 +30,7 @@ function Fail([string] $m) { [Console]::Error.WriteLine("FAIL: $m"); exit 1 }
 function Invoke-Inventory {
   $err = Join-Path $work 'stderr.txt'
   $old = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-  $out = & $engine -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $inv @args 2> $err
+  $out = & $engine -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $inv inventory @args 2> $err
   $code = $LASTEXITCODE
   $ErrorActionPreference = $old
   return @{ Code = $code; Out = @($out); Err = ((Get-Content -LiteralPath $err -ErrorAction SilentlyContinue) -join "`n") }

@@ -5,12 +5,12 @@ self-contained file with no imports and nothing about my projects baked in.
 
 | Module | What it does | Runs on | Scripts |
 |---|---|---|---|
-| [`harden/`](harden/) | firewall, auto-updates, fail2ban, key-only SSH | the server you are configuring | `harden.sh` |
+| [`harden/`](harden/) | firewall, auto-updates, fail2ban, key-only SSH | the server you are configuring | `server.sh harden` |
 | [`vmlab/`](vmlab/) | libvirt VMs without sudo: a throwaway lab or a single VM | your own machine | `vmlab.sh` |
 | [`edge/`](edge/) | how traffic reaches a service: a `tunnel` to it, an `access` gate in front of it (Cloudflare) | your machine or CI | `edge.sh` |
 | [`secrets/`](secrets/) | an environment's config from a secrets manager, ready to source (Bitwarden) | your machine or CI | `secrets.sh` |
-| [`inventory/`](inventory/) | installed software, and which package manager put it there | the machine being inspected, Linux or Windows | `inventory.sh`, `inventory.ps1` |
-| [`cleanup/`](cleanup/) | reclaim disk space: package caches, old temp files, journal, logs, dumps — reports first | the machine being cleaned, Linux or Windows | `cleanup.sh`, `cleanup.ps1` |
+| [`inventory/`](inventory/) | installed software, and which package manager put it there | the machine being inspected, Linux or Windows | `server.sh inventory`, `server.ps1 inventory` |
+| [`cleanup/`](cleanup/) | reclaim disk space: package caches, old temp files, journal, logs, dumps — reports first | the machine being cleaned, Linux or Windows | `server.sh cleanup`, `server.ps1 cleanup` |
 | [`upgrade/`](upgrade/) | upgrade a containerised service, snapshot first, roll back image and data on failure | the host running it | `upgrade.sh` |
 | [`database/`](database/) | routine SQLite maintenance: checkpoint, bounded vacuum, the app's backup, a heartbeat | the host with the database | `database.sh` |
 
@@ -35,8 +35,8 @@ echo "841b8f34d7d4481f966f1026e935c770291d2f82cac13eebd7cf1c0944f63081  ops-get"
 chmod +x ops-get
 
 ./ops-get --list v4.4.0                    # what this version has
-./ops-get harden.sh v4.4.0 /tmp/harden.sh
-sudo /tmp/harden.sh
+./ops-get server.sh harden v4.4.0 /tmp/server.sh harden
+sudo /tmp/server.sh harden
 ```
 
 The second line checks `ops-get` itself against the hash printed here, before
@@ -53,7 +53,7 @@ Invoke-WebRequest https://github.com/LytronHQ/ops/releases/download/v4.4.0/ops-g
 if ((Get-FileHash .\ops-get.ps1).Hash -ne '922D98A16DE563C299DBF8D3692B193215ED566FABA1B024639C09876F43DE9B') { throw 'ops-get.ps1 does not match' }
 
 powershell -ExecutionPolicy Bypass -File .\ops-get.ps1 -List v4.4.0
-powershell -ExecutionPolicy Bypass -File .\ops-get.ps1 inventory.ps1 v4.4.0
+powershell -ExecutionPolicy Bypass -File .\ops-get.ps1 server.ps1 inventory v4.4.0
 ```
 
 `-ExecutionPolicy Bypass` because Windows blocks unsigned downloaded scripts by
@@ -70,7 +70,7 @@ ops-get --list <version>
 
 | Argument | Required | Meaning |
 |---|---|---|
-| `<script>` | yes | the asset filename, e.g. `harden.sh`. No path — release assets are flat |
+| `<script>` | yes | the asset filename, e.g. `server.sh harden`. No path — release assets are flat |
 | `<version>` | yes | a release tag, e.g. `v4.4.0`. There is deliberately no "latest" |
 | `[destination]` | no | where to write it. Default: `./<script>` |
 
