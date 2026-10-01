@@ -8,7 +8,7 @@
 #   ops-get --list <version>               the scripts in that version, marking
 #                                          any that do not run on this machine
 #
-#   ops-get harden.sh v3.0.0 /tmp/harden.sh
+#   ops-get server.sh v5.0.0 /tmp/server.sh
 #
 # Options — every input is one; nothing is read from the environment:
 #   --list <version>    list the scripts in a version, from its SHA256SUMS;

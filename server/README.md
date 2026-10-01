@@ -35,7 +35,7 @@ server is the one place you cannot install a runtime first.
 ### Use it
 
 ```sh
-./ops-get server.sh harden v4.1.0 /tmp/server.sh harden
+./ops-get server.sh v5.0.0 /tmp/server.sh
 sudo /tmp/server.sh harden
 ```
 

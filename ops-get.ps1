@@ -7,7 +7,7 @@
 #   .\ops-get.ps1 -List <version>                    the scripts in that version, marking
 #                                                    any that do not run on this machine
 #
-#   .\ops-get.ps1 inventory.ps1 v4.2.0
+#   .\ops-get.ps1 server.ps1 v5.0.0
 #
 # Options - every input is one; nothing is read from the environment:
 #   -List <version>     list the scripts in a version, from its SHA256SUMS;

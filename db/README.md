@@ -12,7 +12,7 @@ worked.
 ## Get it
 
 ```sh
-./ops-get db.sh v4.4.0
+./ops-get db.sh v5.0.0
 ```
 
 ## Use it

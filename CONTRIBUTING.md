@@ -83,11 +83,19 @@ per-distribution scripts: `ops-get` verifies exactly one file.
 
 ## Names and versions
 
-- **A name is the operational capability**, from this repo's point of view —
-  harden a host, run a VM lab, gate a service, get an environment's secrets.
-  Not the tool it wraps (`bws`, `virsh`), not the vendor (Bitwarden,
-  Cloudflare), not the form of its output (an env file). The module folder and
-  the script share that name.
+- **A module is a subject; what it does is an action.** One script per
+  subject — `server.sh`, `edge.sh`, `db.sh` — with the action as its first
+  argument: `server.sh cleanup`, `edge.sh tunnel`. The folder and the script
+  share the subject's name; the README has a section per action, and
+  `<script> <action> --help` prints that action's options.
+- **One file per subject**, not per action: a fetched file is still one
+  standalone, checksummed thing, and a subject's actions share its context.
+  Each action is a function (`action_<name>`) with its own option parsing; in
+  PowerShell, a scriptblock with its own `param` block.
+- **Subjects are what is worked on, from this repo's point of view** — a
+  server, a container, a database, the edge, secrets. Not the tool wrapped
+  (`bws`, `virsh`), not the vendor (Bitwarden, Cloudflare). Actions are verbs:
+  `harden`, `cleanup`, `upgrade`, `maintain`.
 - **The vendor is a `--provider`**, as the OS is for `server.sh harden`: a branch
   inside the one script, defaulting to the one implemented and refusing the
   rest. Flags only one provider uses are documented as that provider's.
