@@ -17,7 +17,7 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-SCRIPT="$HERE/../tunnel.sh"
+SCRIPT="$HERE/../edge.sh"
 S="$(mktemp -d)"
 trap 'rm -rf "$S"; [ -n "${STUB_PID:-}" ] && kill "$STUB_PID" 2>/dev/null || true' EXIT
 fail() { echo "FAIL: $*" >&2; exit 1; }
@@ -34,7 +34,7 @@ mkdir -p "$S/bin"
 printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> "%s/curl.argv"\nexec %s "$@"\n' "$S" "$(command -v curl)" > "$S/bin/curl"
 chmod +x "$S/bin/curl"
 
-run() { PATH="$S/bin:$PATH" bash "$SCRIPT" --api-base "http://127.0.0.1:$PORT" --account-id acct \
+run() { PATH="$S/bin:$PATH" bash "$SCRIPT" tunnel --api-base "http://127.0.0.1:$PORT" --account-id acct \
           --api-token-file "$S/token" "$@" 2>"$S/stderr"; }
 j() { python3 -c "import json,sys; d=json.load(open('$S/$1.json')); $2"; }
 
@@ -91,11 +91,11 @@ grep -q "no zone found for app.nowhere.net" "$S/stderr" || fail "missing zone: $
 
 echo "== a wrong API token is refused =="
 printf 'wrong' > "$S/wrong"
-bash "$SCRIPT" --api-base "http://127.0.0.1:$PORT" --account-id acct --api-token-file "$S/wrong" \
+bash "$SCRIPT" tunnel --api-base "http://127.0.0.1:$PORT" --account-id acct --api-token-file "$S/wrong" \
   --hostname app.example.com --origin http://app:8080 >/dev/null 2>&1 && fail "a wrong token was accepted"
 
 echo "== bad input =="
-bad() { local want="$1" out; shift; out="$(bash "$SCRIPT" "$@" 2>&1 </dev/null)" && fail "accepted: $*"; grep -q -- "$want" <<<"$out" || fail "$*: $out"; }
+bad() { local want="$1" out; shift; out="$(bash "$SCRIPT" tunnel "$@" 2>&1 </dev/null)" && fail "accepted: $*"; grep -q -- "$want" <<<"$out" || fail "$*: $out"; }
 base=(--account-id a --api-token-file "$S/token")
 bad "--origin is required"            "${base[@]}" --hostname app.example.com
 bad "is not a URL"                    "${base[@]}" --hostname app.example.com --origin app:8080
