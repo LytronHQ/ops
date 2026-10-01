@@ -9,7 +9,8 @@
 #
 #   .\ops-get.ps1 server.ps1 v5.0.0
 #
-# A version is a release tag, v5.0.0; 5.0.0 means the same.
+# A version is the release to fetch from, v5.0.0 (5.0.0 means the same). It is
+# the script's version, not this file's: any ops-get fetches from any release.
 #
 # Options - every input is one; nothing is read from the environment:
 #   -List <version>     list the scripts in a version, from its SHA256SUMS;
