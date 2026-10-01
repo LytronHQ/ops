@@ -8,6 +8,31 @@ A new decision is added here in the PR that makes it.
 
 ---
 
+### cleanup reports first, and asks before anything that might be wanted
+
+2026-10-01 · #49, #50, #52, #54, #58, #60
+
+A cleanup script is easy to write and easy to make dangerous. Every run
+reports what each category would free; only `--apply` / `-Apply` deletes, and
+then each category is sized again so "freed" is measured. The owning tool does
+the work where there is one. Categories split in two: safe ones run by default
+(caches, old temp files, an oversized journal, old logs, dumps, thumbnails);
+ones that remove something wanted on some machines — Docker images, packages,
+snap revisions, the Windows component store, the Recycle Bin, package
+caches — run only when named.
+
+Numbers have to be honest. Docker's images were first sized by adding up
+their sizes, which counted shared layers once per image and promised twice
+what pruning frees; they are sized by unique size now. The journal was
+reported reclaimable after every run, though only archived files can be
+vacuumed. DISM gives a package count but no bytes, so the Windows component
+store shows its size as unknown until cleaned rather than an invented figure.
+
+While developing it, a `--apply` meant to check a message was run against the
+development machine's own Docker and pruned its dangling images. Since then a
+destructive mode is only ever exercised against fakes, a `--root` copy or a lab
+VM — now a rule in CONTRIBUTING.
+
 ### Windows: ops-get.ps1, PowerShell 5.1, ASCII, and a Windows CI job
 
 2026-09-30 · #44

@@ -13,11 +13,11 @@ asks a package manager to refresh, and never touches the network.
 ## Get it
 
 ```sh
-./ops-get inventory.sh v4.2.0
+./ops-get inventory.sh v4.3.0
 ```
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\ops-get.ps1 inventory.ps1 v4.2.0
+powershell -ExecutionPolicy Bypass -File .\ops-get.ps1 inventory.ps1 v4.3.0
 ```
 
 ## Use it

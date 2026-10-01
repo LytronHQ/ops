@@ -147,6 +147,11 @@ was run and what came back.
 
 Something not verified is said to be not verified, in the PR, with the reason.
 
+**A destructive mode runs only against fakes, a `--root` copy, or a lab VM —
+never the machine you develop on**, not even "just to see the message". A
+`--apply` run meant to check a note about root once pruned the development
+machine's own Docker images.
+
 ## Shell pitfalls that have already cost a bug here
 
 - `set -e` does not apply inside `$(…)` unless `shopt -s inherit_errexit` is on:
@@ -162,6 +167,12 @@ Something not verified is said to be not verified, in the PR, with the reason.
   the producer gets SIGPIPE. Capture the output, then test it.
 - `pwsh -Command '<script>' a b` does not pass `a b` to the script — it appends
   them to the command and runs them. To hand PowerShell arguments, use `-File`.
+- Through `powershell -File`, an array argument (`-Only a,b`) arrives as
+  separate arguments, and the extra ones bind by position to other parameters.
+  Scripts declare `PositionalBinding = $false` so that is an error, and
+  callers through `-File` pass a list as one string: `-Only 'a,b'`.
+- In PowerShell 5.1, `ConvertFrom-Json` returns a JSON array as one object;
+  pipe it on (`| ForEach-Object { $_ }`) to enumerate it on both engines.
 - `ssh` inside `while read` eats the loop's input; use `ssh -n`.
 - In zsh, `$var` does not word-split. Test harness loops belong in bash.
 
