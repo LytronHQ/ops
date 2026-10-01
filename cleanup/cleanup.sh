@@ -27,6 +27,14 @@
 # Opt-in categories, run only when named with --include (or --only):
 #   docker         dangling images and the build cache — never tagged images,
 #                  containers, volumes or networks
+#   autoremove     packages installed only as dependencies of something since
+#                  removed, old kernels included: apt-get autoremove, dnf
+#                  autoremove, pacman orphans. Opt-in because "a dependency" is
+#                  the package manager's record, not the user's intent
+#   snap-revisions disabled snap revisions, kept by snapd after each refresh
+#
+# With --root, autoremove and snap-revisions are reported and never applied:
+# apt's -o Dir moves where it reads, but removing still runs the host's dpkg.
 #
 # Never touched: documents, downloads, the trash, anything a user made.
 #
@@ -57,7 +65,7 @@ note() { echo "cleanup: $*" >&2; }
 usage() { sed -n '3,/^set -euo/p' "$0" | sed '$d; s/^# \{0,1\}//'; }
 
 ALL="package-cache temp journal rotated-logs crash-dumps thumbnails"
-OPTIN="docker"
+OPTIN="docker autoremove snap-revisions"
 # What can be cleaned without root: a user's own files, and a Docker daemon
 # the user can reach — rootless, or through the docker group.
 USERLEVEL="thumbnails docker"
@@ -321,6 +329,94 @@ clean_docker() {
   docker builder prune --force >/dev/null || return 1
 }
 
+# --- autoremove (opt-in) -------------------------------------------------------
+
+# "<manager> <package>" for each package its manager would autoremove.
+autoremove_list() {
+  if command -v apt-get >/dev/null 2>&1 && [ -e "$ROOT/var/lib/dpkg/status" ]; then
+    local aptopts=()
+    [ -z "$ROOT" ] || aptopts=(-o "Dir=$ROOT/" -o "Dir::State::status=$ROOT/var/lib/dpkg/status")
+    apt-get "${aptopts[@]}" -s autoremove 2>/dev/null | awk '$1 == "Remv" { print "apt " $2 }' || true
+  fi
+  if command -v dnf >/dev/null 2>&1 && command -v rpm >/dev/null 2>&1; then
+    dnf ${ROOT:+--installroot "$ROOT"} -C -q repoquery --unneeded --qf '%{name}\n' 2>/dev/null | awk 'NF { print "dnf " $1 }' || true
+  fi
+  if [ -d "$ROOT/var/lib/pacman/local" ] && command -v pacman >/dev/null 2>&1; then
+    pacman ${ROOT:+--root "$ROOT"} -Qtdq 2>/dev/null | awk 'NF { print "pacman " $1 }' || true
+  fi
+  return 0
+}
+size_autoremove() {
+  local list; list="$(autoremove_list)"
+  [ -n "$list" ] || { echo "0 0"; return 0; }
+  local apt dnf pac kb=0 b=0
+  apt="$(awk '$1 == "apt" { print $2 }' <<<"$list")"
+  dnf="$(awk '$1 == "dnf" { print $2 }' <<<"$list")"
+  pac="$(awk '$1 == "pacman" { print $2 }' <<<"$list")"
+  if [ -n "$apt" ]; then
+    kb="$(dpkg-query --admindir="$ROOT/var/lib/dpkg" -W -f='${Installed-Size}\n' $apt 2>/dev/null | awk '{ s += $1 } END { printf "%d", s }')"
+    b=$((b + kb * 1024))
+  fi
+  if [ -n "$dnf" ]; then
+    b=$((b + $(rpm ${ROOT:+--root "$ROOT"} -q --qf '%{SIZE}\n' $dnf 2>/dev/null | awk '{ s += $1 } END { printf "%d", s }')))
+  fi
+  if [ -n "$pac" ]; then
+    b=$((b + $(find "$ROOT/var/lib/pacman/local" -mindepth 2 -maxdepth 2 -name desc -print0 | xargs -0 -r awk -v want=" $(tr '\n' ' ' <<<"$pac")" '
+      FNR == 1 { if (keep) s += size; keep = 0; size = 0 }
+      /^%NAME%$/ { getline; keep = index(want, " " $0 " ") > 0 }
+      /^%SIZE%$/ { getline; size = $0 }
+      END { if (keep) s += size; printf "%d", s }')))
+  fi
+  echo "$b $(wc -l <<<"$list")"
+}
+how_autoremove() {
+  local m=()
+  command -v apt-get >/dev/null 2>&1 && [ -e "$ROOT/var/lib/dpkg/status" ] && m+=("apt-get autoremove")
+  command -v dnf >/dev/null 2>&1 && m+=("dnf autoremove")
+  [ -d "$ROOT/var/lib/pacman/local" ] && m+=("pacman orphans")
+  local IFS=,; local h="${m[*]:-no package manager}"
+  [ -z "$ROOT" ] || h="$h; reported only under --root"
+  echo "$h"
+}
+clean_autoremove() {
+  [ -z "$ROOT" ] || return 0             # see the header: never under --root
+  local list; list="$(autoremove_list)"
+  if grep -q '^apt ' <<<"$list"; then
+    DEBIAN_FRONTEND=noninteractive apt-get -y -q autoremove >/dev/null || return 1
+  fi
+  if grep -q '^dnf ' <<<"$list"; then dnf -y -q autoremove >/dev/null || return 1; fi
+  if grep -q '^pacman ' <<<"$list"; then
+    # shellcheck disable=SC2046
+    pacman -Rns --noconfirm $(awk '$1 == "pacman" { print $2 }' <<<"$list") >/dev/null || return 1
+  fi
+}
+
+# --- snap-revisions (opt-in) ---------------------------------------------------
+
+# "<name> <revision>" for each revision snap lists as disabled. snapd answers
+# only for the running system, so nothing under --root.
+snap_disabled() {
+  [ -z "$ROOT" ] && command -v snap >/dev/null 2>&1 || return 0
+  snap list --all --unicode=never --color=never 2>/dev/null | awk 'NR > 1 && $NF ~ /(^|,)disabled(,|$)/ { print $1, $3 }' || true
+}
+size_snap_revisions() {
+  local b=0 n=0 name rev f
+  while read -r name rev; do
+    [ -n "$name" ] || continue
+    n=$((n + 1)); f="/var/lib/snapd/snaps/${name}_${rev}.snap"
+    [ -f "$f" ] && b=$((b + $(stat -c %s "$f")))
+  done < <(snap_disabled)
+  echo "$b $n"
+}
+how_snap_revisions() { echo "snap remove --revision, disabled ones only"; }
+clean_snap_revisions() {
+  local name rev
+  while read -r name rev; do
+    [ -n "$name" ] || continue
+    snap remove "$name" --revision="$rev" >/dev/null || return 1
+  done < <(snap_disabled)
+}
+
 # --- run -----------------------------------------------------------------------
 
 [ "$IS_ROOT" = 1 ] || [ -n "$ROOT" ] || note "not root: some files cannot be read, so sizes may be incomplete"
@@ -334,7 +430,8 @@ for c in $ALL $OPTIN; do
   if ! before="$("size_$fn")"; then note "could not size $c"; FAILED+=" $c"; continue; fi
   read -r bytes items <<<"$before"
   how="$("how_$fn")"
-  if [ "$APPLY" = 1 ] && [ "$bytes" -gt 0 ]; then
+  # Something to clean: bytes, or items whose size could not be read.
+  if [ "$APPLY" = 1 ] && { [ "$bytes" -gt 0 ] || { [ "$items" != "-" ] && [ "$items" -gt 0 ]; }; }; then
     if ! err="$("clean_$fn" 2>&1)"; then
       note "could not clean $c: $(head -1 <<<"$err")"; FAILED+=" $c"
     fi
