@@ -151,6 +151,11 @@ Something not verified is said to be not verified, in the PR, with the reason.
 
 - `set -e` does not apply inside `$(…)` unless `shopt -s inherit_errexit` is on:
   a `die` in a command substitution ends only the subshell.
+- `set -e` is also off for everything inside a function called from `if`,
+  `!`, `&&` or `||`: a function run as `if ! clean_x; then` carries on past its
+  own failures. Such a function checks each step, `cmd || return 1`.
+- `[ -f x ] && cmd` as the last line of a loop or function makes it return 1
+  when the test is false. Use `if`, and end with `return 0`.
 - `read x <<<"$(cmd)"` does not fail when `cmd` does. Assign first
   (`out="$(cmd)"`), then `read`.
 - Under `pipefail`, `producer | grep -q` can fail *after a match*: grep exits,
