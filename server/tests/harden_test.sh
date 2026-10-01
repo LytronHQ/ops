@@ -67,7 +67,7 @@ grep -q "==> \[harden\] done" <<<"$out" || fail "it did not finish: $out"
 
 echo "== a new key login still works =="
 who="$(ssh -i "$K/id" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-  -o BatchMode=yes -o ConnectTimeout=10 "$U@127.0.0.1" whoami 2>&1)" || fail "SSH login failed after hardening: $who"
+  -o BatchMode=yes -o ConnectTimeout=10 -o LogLevel=ERROR "$U@127.0.0.1" whoami 2>&1)" || fail "SSH login failed after hardening: $who"
 [ "$who" = "$U" ] || fail "logged in as '$who'"
 ssh -o PubkeyAuthentication=no -o PreferredAuthentications=password -o BatchMode=yes -o StrictHostKeyChecking=no \
   -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 "$U@127.0.0.1" true 2>&1 | grep -q 'Permission denied (publickey)' \
