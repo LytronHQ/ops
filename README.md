@@ -8,6 +8,7 @@ self-contained file with no imports and nothing about my projects baked in.
 | [`harden/`](harden/) | firewall, auto-updates, fail2ban, key-only SSH | the server you are configuring | `harden.sh` |
 | [`vmlab/`](vmlab/) | libvirt VMs without sudo: a throwaway lab or a single VM | your own machine | `vmlab.sh` |
 | [`access/`](access/) | gate a hostname so only machines with a service token get through (Cloudflare) | your machine or CI | `access.sh` |
+| [`tunnel/`](tunnel/) | reach a private service at a hostname without opening a port (Cloudflare) | your machine or CI | `tunnel.sh` |
 | [`secrets/`](secrets/) | an environment's config from a secrets manager, ready to source (Bitwarden) | your machine or CI | `secrets.sh` |
 | [`inventory/`](inventory/) | installed software, and which package manager put it there | the machine being inspected, Linux or Windows | `inventory.sh`, `inventory.ps1` |
 | [`cleanup/`](cleanup/) | reclaim disk space: package caches, old temp files, journal, logs, dumps — reports first | the machine being cleaned, Linux or Windows | `cleanup.sh`, `cleanup.ps1` |
