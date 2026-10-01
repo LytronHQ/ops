@@ -8,7 +8,7 @@
 #
 # Providers: bitwarden (Bitwarden Secrets Manager, through its `bws` CLI).
 # The capability is the name; the vendor is a --provider, the way the OS is
-# for harden.sh. Another provider is another branch here, not another script.
+# for server.sh harden. Another provider is another branch here, not another script.
 #
 #   ./secrets.sh --access-token-file ~/.config/bws/production \
 #     --project <shared-project-id> --project <production-project-id> \

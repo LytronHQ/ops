@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tunnel_test.sh — run tunnel.sh against a stub of the Cloudflare API and check
+# tunnel_test.sh — run edge.sh tunnel against a stub of the Cloudflare API and check
 # what it creates, what it refuses, and what it prints.
 #
 #   tunnel/tests/tunnel_test.sh

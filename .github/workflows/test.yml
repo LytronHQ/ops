@@ -24,6 +24,16 @@ jobs:
       - name: Run the test suites
         run: ./run-tests
 
+  # server.sh harden for real: the runner is a disposable Ubuntu machine with
+  # root, which is exactly what it needs and what a stub cannot stand in for.
+  # It only denies inbound traffic; the runner talks to GitHub outbound.
+  harden:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Harden the runner, then check it and log in again
+        run: sudo env OPS_TEST_DISPOSABLE=1 bash server/tests/harden_test.sh
+
   # The PowerShell suites on a real Windows, under both engines: Windows
   # PowerShell 5.1, the one every Windows has, and PowerShell 7. A suite exiting
   # 77 does not apply to this platform and is reported, not counted.

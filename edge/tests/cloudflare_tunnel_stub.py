@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A stub of the Cloudflare endpoints tunnel.sh calls: zones, tunnels, their
+"""A stub of the Cloudflare endpoints edge.sh tunnel calls: zones, tunnels, their
 configuration, DNS records and the connector token.
 
 It exists so tunnel_test.sh can run the REAL script. State lives in JSON files

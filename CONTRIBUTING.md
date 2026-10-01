@@ -88,7 +88,7 @@ per-distribution scripts: `ops-get` verifies exactly one file.
   Not the tool it wraps (`bws`, `virsh`), not the vendor (Bitwarden,
   Cloudflare), not the form of its output (an env file). The module folder and
   the script share that name.
-- **The vendor is a `--provider`**, as the OS is for `harden.sh`: a branch
+- **The vendor is a `--provider`**, as the OS is for `server.sh harden`: a branch
   inside the one script, defaulting to the one implemented and refusing the
   rest. Flags only one provider uses are documented as that provider's.
 - **Names are unique across the whole repo**: release assets are flat, and the
@@ -173,6 +173,11 @@ machine's own Docker images.
   callers through `-File` pass a list as one string: `-Only 'a,b'`.
 - In PowerShell 5.1, `ConvertFrom-Json` returns a JSON array as one object;
   pipe it on (`| ForEach-Object { $_ }`) to enumerate it on both engines.
+- An action is a scriptblock inside `<subject>.ps1`, so two things behave
+  unlike a script of its own: `$script:` is the file's scope, not the action's
+  — share state through an object mutated in place, a list's `.Add()` — and a
+  function returning an empty array returns `$null`, which a typed parameter
+  no longer turns back into an array: return arrays as `return ,@(…)`.
 - `ssh` inside `while read` eats the loop's input; use `ssh -n`.
 - In zsh, `$var` does not word-split. Test harness loops belong in bash.
 

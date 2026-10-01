@@ -52,31 +52,31 @@ refuse() { # description expected-message — build must fail
 fresh() { rm -rf "$W/b" "$W/b-dist"; copy "$W/b"; }
 
 echo "== a script with no platforms line stops the build =="
-fresh; sed -i '/^# platforms:/d' "$W/b/harden/harden.sh"
-refuse "no platforms line" "harden.sh has no '# platforms:' line"
+fresh; sed -i '/^# platforms:/d' "$W/b/server/server.sh"
+refuse "no platforms line" "server.sh has no '# platforms:' line"
 
 echo "== an unknown platform stops the build =="
 fresh; sed -i 's/^# platforms: .*/# platforms: linux beos/' "$W/b/vmlab/vmlab.sh"
 refuse "unknown platform" "unknown platform 'beos'"
 
 echo "== two scripts with one name stop the build =="
-fresh; mkdir -p "$W/b/other"; cp "$W/b/harden/harden.sh" "$W/b/other/harden.sh"
+fresh; mkdir -p "$W/b/other"; cp "$W/b/server/server.sh" "$W/b/other/server.sh"
 refuse "duplicate" "same name"
 
 echo "== a script that does not parse stops the build =="
-fresh; printf '#!/bin/sh\n# platforms: linux\nif then fi (\n' > "$W/b/harden/broken.sh"
+fresh; printf '#!/bin/sh\n# platforms: linux\nif then fi (\n' > "$W/b/server/broken.sh"
 refuse "does not parse" "does not parse"
 
 echo "== a PowerShell script that does not parse stops the build =="
 if command -v pwsh >/dev/null 2>&1; then
-  fresh; printf '# platforms: windows\nfunction f( {\n' > "$W/b/harden/broken.ps1"
-  refuse "ps1 does not parse" "does not parse: ./harden/broken.ps1"
+  fresh; printf '# platforms: windows\nfunction f( {\n' > "$W/b/server/broken.ps1"
+  refuse "ps1 does not parse" "does not parse: ./server/broken.ps1"
 else
   echo "   (no pwsh here; the PowerShell parse check is not exercised)"
 fi
 
 echo "== a PowerShell script with non-ASCII characters stops the build =="
-fresh; printf '# platforms: windows\n"not a path \342\200\224 flat"\n' > "$W/b/harden/dash.ps1"
+fresh; printf '# platforms: windows\n"not a path \342\200\224 flat"\n' > "$W/b/server/dash.ps1"
 refuse "non-ASCII ps1" "dash.ps1 has non-ASCII characters"
 
 echo "== --out never replaces what is not a previous build =="
@@ -93,9 +93,9 @@ python3 -m http.server "$PORT" --bind 127.0.0.1 --directory "$W/www" >/dev/null 
 SERVER_PID=$!
 for _ in $(seq 1 50); do curl -fsS "http://127.0.0.1:$PORT/vX/MANIFEST" >/dev/null 2>&1 && break; sleep 0.1; done
 out="$(sh "$W/dist/ops-get" --base-url "http://127.0.0.1:$PORT/vX" --list vX)" || fail "--list against the build failed"
-grep -qx "harden.sh" <<<"$out" || fail "--list: $out"
-sh "$W/dist/ops-get" --base-url "http://127.0.0.1:$PORT/vX" harden.sh vX "$W/got/harden.sh" >/dev/null \
+grep -qx "server.sh" <<<"$out" || fail "--list: $out"
+sh "$W/dist/ops-get" --base-url "http://127.0.0.1:$PORT/vX" server.sh vX "$W/got/server.sh" >/dev/null \
   || fail "fetching from the build failed"
-cmp -s "$W/got/harden.sh" "$W/repo/harden/harden.sh" || fail "fetched harden.sh differs from the source"
+cmp -s "$W/got/server.sh" "$W/repo/server/server.sh" || fail "fetched server.sh differs from the source"
 
 echo "PASS"

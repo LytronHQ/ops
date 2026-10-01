@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# access_test.sh — run access.sh against a stub Cloudflare API and check
+# access_test.sh — run edge.sh access against a stub Cloudflare API and check
 # the things that are expensive to get wrong in production.
 #
 #   access/tests/access_test.sh
