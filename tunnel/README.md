@@ -15,7 +15,7 @@ Edit** (account) and **DNS Edit** (zone).
 ## Get it
 
 ```sh
-./ops-get tunnel.sh v4.3.0
+./ops-get tunnel.sh v4.4.0
 ```
 
 ## Use it
