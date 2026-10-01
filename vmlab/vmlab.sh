@@ -170,7 +170,18 @@ create_one() { # name ram vcpu disk_gb
 
   # A thin overlay on the shared base: each VM costs a few hundred MB, not 3.5G.
   # The size is only a ceiling; cloud-init grows the root partition to it.
-  qemu-img create -q -f qcow2 -F qcow2 -b "$BASE" "$disk" "${size}G"
+  #
+  # Tried a few times: qemu-img uses io_uring, which needs locked memory from a
+  # per-user limit other programs share. When they hold it, qemu-img fails with
+  # "Failed to initialize io_uring: Cannot allocate memory" — about one run in
+  # three on a busy desktop — and succeeds a moment later.
+  local try err
+  for try in 1 2 3 4 5; do
+    err="$(qemu-img create -q -f qcow2 -F qcow2 -b "$BASE" "$disk" "${size}G" 2>&1)" && break
+    rm -f "$disk"
+    [ "$try" = 5 ] && die "qemu-img could not create $disk after 5 tries: $err${err:+ }(io_uring 'Cannot allocate memory' means the locked-memory limit, ulimit -l, is exhausted by other programs)"
+    sleep 1
+  done
 
   # NoCloud seed. The label MUST be `cidata`, and it is attached as a virtio-blk
   # disk rather than a CD-ROM: a CD enumerates too late, so cloud-init's
