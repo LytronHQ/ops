@@ -99,9 +99,16 @@ powershell -ExecutionPolicy Bypass -File .\cleanup.ps1 -Apply      # clean
 - **Without administrator rights** your own files are sized and cleaned and the
   system's are left alone, which it says. Cleaning your own files needs no
   elevation.
-- Options are PowerShell-style — `-Apply`, `-Only`, `-Skip`, `-OlderThan`,
-  `-Format`, `-Help` — with the same meaning as below. The Recycle Bin is never
-  touched.
+- Options are PowerShell-style — `-Apply`, `-Only`, `-Skip`, `-Include`,
+  `-OlderThan`, `-Format`, `-Help` — with the same meaning as below.
+
+Opt-in on Windows, with `-Include`:
+
+| Category | What goes | How |
+|---|---|---|
+| `components` | superseded components in the component store (WinSxS) | `DISM /StartComponentCleanup`. DISM reports how many packages are reclaimable but not how many bytes, so the size shows as `?` until cleaned; then freed is the store's actual size before minus after. Administrator; minutes, not seconds |
+| `recycle-bin` | the Recycle Bin on every drive | `Clear-RecycleBin`. User data — the reason it is opt-in |
+| `package-caches` | Scoop's download cache and old app versions — never the one `current` points to — and Chocolatey's download cache | `scoop cache rm` / `scoop cleanup` where Scoop is installed, the same folders otherwise |
 
 ## Options
 

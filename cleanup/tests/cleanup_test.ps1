@@ -17,6 +17,9 @@
 #   3. fresh files, files outside a category's pattern, and other folders stay
 #   4. a file in use is left, counted, and not a failure
 #   5. -OlderThan 0, formats, -Only, -Skip, bad input
+#   6. opt-in: never run unless named; package-caches keeps the version
+#      'current' points to; recycle-bin empties a file really sent to it;
+#      components reports DISM's count with the size unknown
 $ErrorActionPreference = 'Stop'
 if (-not ($PSVersionTable.PSEdition -ne 'Core' -or $IsWindows)) { 'Windows only'; exit 77 }
 
@@ -104,6 +107,46 @@ try {
   $r = Invoke-Cleanup
   if ($r.Out[0] -notmatch '^CATEGORY\s+RECLAIMABLE\s+ITEMS\s+HOW$') { Fail "table header: $($r.Out[0])" }
   if ($r.Err -notlike '*nothing was deleted*') { Fail 'the report did not say it deleted nothing' }
+
+  'opt-in categories never run unless named'
+  $r = Invoke-Cleanup -Format tsv
+  foreach ($c in 'components', 'recycle-bin', 'package-caches') { if (Get-Row $r $c) { Fail "$c ran without being named" } }
+
+  'package-caches: old Scoop versions and caches go, current stays'
+  $scoop = Join-Path $work 'scoop'
+  New-File "$scoop\apps\tool\1.0\tool.exe" 5000 0
+  New-File "$scoop\apps\tool\2.0\tool.exe" 6000 0
+  New-Item -ItemType Junction -Path "$scoop\apps\tool\current" -Target "$scoop\apps\tool\2.0" | Out-Null
+  New-File "$scoop\cache\tool#1.0#x.zip" 7000 0
+  New-File "$temp\chocolatey\pkg.nupkg" 800 0
+  $env:SCOOP = $scoop; $env:SCOOP_GLOBAL = (Join-Path $work 'noglobal')
+  $r = Invoke-Cleanup -Only package-caches -Format tsv
+  if ([long] (Get-Row $r 'package-caches')[1] -ne 12800) { Fail "package-caches size: $(Get-Row $r 'package-caches')" }
+  $r = Invoke-Cleanup -Apply -Include package-caches -Only package-caches -Format tsv
+  if ($r.Code -ne 0) { Fail "package-caches apply: $($r.Err)" }
+  if (Test-Path "$scoop\apps\tool\1.0") { Fail 'the old Scoop version is still there' }
+  if (-not (Test-Path "$scoop\apps\tool\2.0\tool.exe")) { Fail 'the current Scoop version was removed' }
+  if (-not (Test-Path "$scoop\apps\tool\current")) { Fail "Scoop's current link was removed" }
+  if ((Test-Path "$scoop\cache\tool#1.0#x.zip") -or (Test-Path "$temp\chocolatey\pkg.nupkg")) { Fail 'a download cache is still there' }
+
+  'recycle-bin: a file really sent there is emptied'
+  Add-Type -AssemblyName Microsoft.VisualBasic
+  $binned = Join-Path $work 'to-the-bin.txt'; New-File $binned 4321 0
+  [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($binned, 'OnlyErrorDialogs', 'SendToRecycleBin')
+  $r = Invoke-Cleanup -Only recycle-bin -Format tsv
+  if ([long] (Get-Row $r 'recycle-bin')[1] -lt 4321) { Fail "recycle-bin size: $(Get-Row $r 'recycle-bin')" }
+  $r = Invoke-Cleanup -Apply -Include recycle-bin -Only recycle-bin -Format tsv
+  if ($r.Code -ne 0) { Fail "recycle-bin apply: $($r.Err)" }
+  $r = Invoke-Cleanup -Only recycle-bin -Format tsv
+  if ([long] (Get-Row $r 'recycle-bin')[1] -ne 0) { Fail "the Recycle Bin was not emptied: $(Get-Row $r 'recycle-bin')" }
+
+  'components: DISM counts packages, the size is unknown until cleaned'
+  $r = Invoke-Cleanup -Only components -Format tsv
+  if ($r.Code -ne 0) { Fail "components: $($r.Err)" }
+  $row = Get-Row $r 'components'
+  if ($row[1] -ne '-1' -or $row[2] -notmatch '^\d+$') { Fail "components should be unknown size and a package count: $($row -join ' | ')" }
+  $r = Invoke-Cleanup -Only components
+  if ($r.Out[1] -notmatch '^components\s+\?\s') { Fail "the table should show the size as ?: $($r.Out[1])" }
 
   'bad input'
   $r = Invoke-Cleanup -Only temp crash-dumps
