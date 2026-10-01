@@ -22,7 +22,7 @@ its data taken first, and an automatic rollback — of the image **and** the dat
 ## Get it
 
 ```sh
-./ops-get container.sh v4.4.0
+./ops-get container.sh v5.0.0
 ```
 
 ## Use it

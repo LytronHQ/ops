@@ -8,6 +8,33 @@ A new decision is added here in the PR that makes it.
 
 ---
 
+### A module is a subject, and what it does is an action
+
+2026-10-01 · #69, #70, #73, #74
+
+The module names had become a mix — verbs (harden, cleanup), nouns
+(inventory, secrets), words too broad for what they covered (upgrade,
+database, access). Settled on `<subject> <action>`, like `gh pr create`: one
+script per subject, the action as its first argument — `server.sh harden |
+cleanup | inventory`, `container.sh upgrade`, `db.sh maintain`, `edge.sh
+tunnel | access`, `secrets.sh env`, `vmlab.sh create | …`.
+
+One file per subject rather than per action, so a fetch is still one
+standalone, checksummed file. Subjects stay neutral — `edge`, not `cloudflare`
+— and the vendor stays a `--provider`, as decided for v4.
+
+Each old script moved unchanged into an action function (PowerShell: a
+scriptblock with its own `param` block), its header becoming the action's
+`--help`, and the test suites — changed only in how they call the script — were
+the check. They caught what moving did change: in PowerShell, `$script:` inside
+an action means the file's scope, and an empty array returned from a function
+is no longer turned back into an array by the script's typed parameter; one
+silenced a failure, the other broke `-Only`.
+
+`server.sh harden`, never tested automatically before, now runs for real on
+every PR on CI's disposable Ubuntu runner — including a new key login after
+hardening.
+
 ### Scripts brought in are named for what they do, and their secrets handled as data
 
 2026-10-01 · #55, #63, #65
