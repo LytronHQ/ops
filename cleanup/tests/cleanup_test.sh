@@ -121,6 +121,48 @@ mkdir -p "$W/bin"; printf '#!/bin/sh\necho "E: Could not lock" >&2; exit 100\n' 
 PATH="$W/bin:$PATH" bash "$SCRIPT" --root "$R" --apply --only package-cache >/dev/null 2>"$W/stderr" && fail "a failed apt-get did not fail the run"
 grep -q "could not clean package-cache" "$W/stderr" || fail "not named: $(cat "$W/stderr")"
 
+echo "== docker: opt-in, and only dangling images and build cache =="
+mkdir -p "$W/dbin"
+cat > "$W/dbin/docker" <<EOF
+#!/bin/sh
+# A Docker with two dangling images, one tagged image, a volume and a build
+# cache. Every call is recorded; prunes empty the dangling set.
+echo "\$*" >> "$W/docker.calls"
+state="$W/docker.pruned"
+case "\$1 \$2" in
+  "info "*) exit 0 ;;
+  "system df")
+    case "\$*" in
+      *" -v "*) [ -f "\$state" ] || printf '<none>|<none>|100MB\\n<none>|<none>|50MB\\n'
+                printf 'nginx|latest|190MB\\n' ;;
+      *) [ -f "\$state" ] && printf 'Build Cache|0B|0\\n' || printf 'Build Cache|30MB (100%%)|4\\n'
+         printf 'Local Volumes|3.4GB (100%%)|1\\n' ;;
+    esac ;;
+  "image prune"|"builder prune") touch "\$state" ;;
+esac
+exit 0
+EOF
+chmod +x "$W/dbin/docker"
+PATH="$W/dbin:$PATH" bash "$SCRIPT" --format tsv 2>/dev/null | cut -f1 | grep -qx docker && fail "docker ran without being named"
+out="$(PATH="$W/dbin:$PATH" bash "$SCRIPT" --only docker --format tsv 2>/dev/null | tail -1)"
+[ "$(cut -f2,3 <<<"$out")" = $'180000000\t6' ] || fail "docker size should be 150MB unique + 30MB cache, 2 images + 4 cache records: $out"
+: > "$W/docker.calls"
+out="$(PATH="$W/dbin:$PATH" bash "$SCRIPT" --apply --include docker --only docker --format tsv 2>"$W/stderr" | tail -1)"
+[ "$(cut -f2 <<<"$out")" = 180000000 ] || fail "docker freed: $out $(cat "$W/stderr")"
+# Everything but the two read-only calls counts as a change.
+destructive="$(grep -vE '^(info|system df)( |$)' "$W/docker.calls" | sort | tr '\n' ';')"
+[ "$destructive" = "builder prune --force;image prune --force;" ] || fail "docker was asked to: $destructive"
+grep -qE -- '-a( |$)|--all|volume|system prune' "$W/docker.calls" && fail "a prune went beyond dangling images and the build cache"
+
+echo "== without root, --apply does what needs none and says what is left =="
+if [ "$(id -u)" != 0 ]; then
+  rm -f "$W/docker.pruned"
+  out="$(PATH="$W/dbin:$PATH" bash "$SCRIPT" --apply --only docker,journal,temp --format tsv 2>"$W/stderr")" \
+    || fail "a non-root apply failed: $(cat "$W/stderr")"
+  grep -q "left for root: temp journal" "$W/stderr" || fail "did not say what was left: $(cat "$W/stderr")"
+  [ "$(tail -n +2 <<<"$out" | cut -f1)" = docker ] || fail "a non-root apply ran root categories: $out"
+fi
+
 echo "== --only, --skip, formats, bad input =="
 [ "$(run --only temp,journal --format tsv | tail -n +2 | cut -f1 | tr '\n' ' ')" = "temp journal " ] || fail "--only"
 run --skip package-cache --format tsv | cut -f1 | grep -qx package-cache && fail "--skip"
@@ -131,8 +173,6 @@ bad "unknown category 'tmp'"   --root "$R" --only tmp
 bad "is not a number of days"  --root "$R" --older-than week
 bad "a size like 500M"         --root "$R" --journal-max lots
 bad "unknown argument"         --root "$R" --bogus
-if [ "$(id -u)" != 0 ]; then
-  bad "--apply needs root" --apply
-fi
+bad "unknown category 'podman'" --root "$R" --include podman
 
 echo "PASS"

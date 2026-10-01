@@ -56,6 +56,20 @@ so the number is what actually went, not what was hoped for.
 **Never touched:** documents, downloads, the trash, other caches — anything a
 user made.
 
+### Opt-in categories
+
+Run only when named, with `--include` (or `--only`): each removes something
+that is junk on most machines and wanted on some.
+
+| Category | What goes | How |
+|---|---|---|
+| `docker` | dangling images — untagged leftovers of rebuilt ones — and the build cache | `docker image prune` (never `--all`), `docker builder prune`. **Never** tagged images, containers, volumes or networks. Sized by each image's *unique* size: plain sizes count shared layers once per image and overstate it |
+
+```sh
+./cleanup.sh --include docker
+./cleanup.sh --apply --include docker      # as anyone who can reach the daemon, rootless too
+```
+
 ## On Windows
 
 ```powershell
@@ -88,9 +102,10 @@ except `HOME`, for whose thumbnails when not root.
 
 | Flag | Default | Meaning |
 |---|---|---|
-| `--apply` | | clean. Without it nothing is deleted. Needs root, except with `--root` |
+| `--apply` | | clean. Without it nothing is deleted. Without root, only what needs none — your thumbnails, a Docker daemon you can reach — is cleaned, and the rest is named as left for root |
 | `--only <list>` | all | only these categories; repeatable, or comma separated |
 | `--skip <list>` | none | all but these |
+| `--include <list>` | none | add opt-in categories |
 | `--older-than <days>` | 7, 30, 7 | one age limit for `temp`, `rotated-logs` and `crash-dumps`. `0` means any age — for a machine about to become an image, not a live one |
 | `--journal-max <size>` | `500M` | keep the journal to this size: `K`, `M` or `G` |
 | `--format <f>` | `table` | `table`, `tsv` or `json` |
@@ -117,4 +132,6 @@ would be reported (both tools were run for real in Fedora and Arch containers).
 It covers a report deleting nothing, every category's junk going and the exact
 amount reported, user files and protected directories surviving, the default
 ages keeping fresh files, pacman's rule of keeping installed versions, a
-failing tool failing the run, and bad input.
+failing tool failing the run, and bad input. A fake `docker` on `PATH` records
+every call: the only changes it may be asked for are `image prune --force` and
+`builder prune --force`.
