@@ -570,7 +570,10 @@ function Get-WingetRows {
 # One package manager that cannot be read must not cost the whole list, nor
 # pass for a complete one: it is named, the rest is shown, the run exits 1, and
 # the partial list is not saved.
-$Incomplete = @()
+# A list mutated in place, not an array reassigned through $script: - inside
+# this action's scriptblock $script: is server.ps1's scope, so failures were
+# recorded where nothing read them and a partial scan exited 0.
+$Incomplete = New-Object System.Collections.Generic.List[string]
 function Invoke-Scan {
   $rows = New-Object System.Collections.Generic.List[object]
   $collectors = [ordered] @{ registry = 'Get-RegistryRows'; winget = 'Get-WingetRows'; choco = 'Get-ChocoRows'; scoop = 'Get-ScoopRows'; store = 'Get-StoreRows' }
@@ -578,7 +581,7 @@ function Invoke-Scan {
     try { foreach ($r in @(& $collectors[$name])) { if ($r) { $rows.Add($r) } } }
     catch {
       Write-Note "could not read ${name}: $($_.Exception.Message); the list below is missing it"
-      $script:Incomplete += $name
+      $Incomplete.Add($name)
     }
   }
   return ,@($rows | Sort-Object { $_[0].ToLower() }, { $_[2] })

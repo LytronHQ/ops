@@ -173,6 +173,11 @@ machine's own Docker images.
   callers through `-File` pass a list as one string: `-Only 'a,b'`.
 - In PowerShell 5.1, `ConvertFrom-Json` returns a JSON array as one object;
   pipe it on (`| ForEach-Object { $_ }`) to enumerate it on both engines.
+- An action is a scriptblock inside `<subject>.ps1`, so two things behave
+  unlike a script of its own: `$script:` is the file's scope, not the action's
+  — share state through an object mutated in place, a list's `.Add()` — and a
+  function returning an empty array returns `$null`, which a typed parameter
+  no longer turns back into an array: return arrays as `return ,@(…)`.
 - `ssh` inside `while read` eats the loop's input; use `ssh -n`.
 - In zsh, `$var` does not word-split. Test harness loops belong in bash.
 
