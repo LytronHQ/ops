@@ -24,14 +24,20 @@
 #   crash-dumps    /var/crash and systemd coredumps older than 7 days
 #   thumbnails     each user's ~/.cache/thumbnails, regenerated on demand
 #
+# Opt-in categories, run only when named with --include (or --only):
+#   docker         dangling images and the build cache — never tagged images,
+#                  containers, volumes or networks
+#
 # Never touched: documents, downloads, the trash, anything a user made.
 #
 # Options — every input is one; nothing else is read from the environment
 # except HOME (whose thumbnails, when not root):
-#   --apply              clean; without it nothing is deleted. Needs root,
-#                        except with --root
+#   --apply              clean; without it nothing is deleted. Without root,
+#                        only what needs none (thumbnails, docker) is cleaned,
+#                        and the rest is said to need root
 #   --only <list>        only these categories; repeatable or commas
 #   --skip <list>        all but these
+#   --include <list>     add opt-in categories to the default ones
 #   --older-than <days>  one age limit for temp, rotated-logs and crash-dumps
 #                        (default 7, 30, 7). 0 means any age — for emptying a
 #                        machine about to become an image, not a live one
@@ -51,17 +57,22 @@ note() { echo "cleanup: $*" >&2; }
 usage() { sed -n '3,/^set -euo/p' "$0" | sed '$d; s/^# \{0,1\}//'; }
 
 ALL="package-cache temp journal rotated-logs crash-dumps thumbnails"
-APPLY=0 ONLY=() SKIP=() AGE="" JMAX="500M" FORMAT="table" ROOT=""
+OPTIN="docker"
+# What can be cleaned without root: a user's own files, and a Docker daemon
+# the user can reach — rootless, or through the docker group.
+USERLEVEL="thumbnails docker"
+APPLY=0 ONLY=() SKIP=() INCLUDE=() AGE="" JMAX="500M" FORMAT="table" ROOT=""
 while [ $# -gt 0 ]; do
   case "$1" in --*=*) set -- "${1%%=*}" "${1#*=}" "${@:2}" ;; esac
   case "$1" in
-    --only|--skip|--older-than|--journal-max|--format|--root)
+    --only|--skip|--include|--older-than|--journal-max|--format|--root)
       [ $# -ge 2 ] && [ -n "$2" ] || die "$1 needs a value (try --help)" ;;
   esac
   case "$1" in
     --apply)       APPLY=1; shift ;;
     --only)        IFS=', ' read -r -a v <<<"$2"; ONLY+=("${v[@]}"); shift 2 ;;
     --skip)        IFS=', ' read -r -a v <<<"$2"; SKIP+=("${v[@]}"); shift 2 ;;
+    --include)     IFS=', ' read -r -a v <<<"$2"; INCLUDE+=("${v[@]}"); shift 2 ;;
     --older-than)  [[ "$2" =~ ^[0-9]+$ ]] || die "--older-than '$2' is not a number of days"; AGE="$2"; shift 2 ;;
     --journal-max) [[ "$2" =~ ^[0-9]+[KMG]?$ ]] || die "--journal-max '$2': a size like 500M or 2G"; JMAX="$2"; shift 2 ;;
     --format)      FORMAT="$2"; shift 2 ;;
@@ -71,14 +82,15 @@ while [ $# -gt 0 ]; do
   esac
 done
 case "$FORMAT" in table|tsv|json) ;; *) die "--format '$FORMAT': table, tsv or json" ;; esac
-for c in "${ONLY[@]}" "${SKIP[@]}"; do
-  case " $ALL " in *" $c "*) ;; *) die "unknown category '$c'. Categories: $ALL" ;; esac
+for c in "${ONLY[@]}" "${SKIP[@]}" "${INCLUDE[@]}"; do
+  case " $ALL $OPTIN " in *" $c "*) ;; *) die "unknown category '$c'. Categories: $ALL; opt-in: $OPTIN" ;; esac
 done
 [ -z "$ROOT" ] || [ -d "$ROOT" ] || die "--root: $ROOT is not a directory"
 IS_ROOT=0; [ "$(id -u)" = 0 ] && IS_ROOT=1
-if [ "$APPLY" = 1 ] && [ "$IS_ROOT" = 0 ] && [ -z "$ROOT" ]; then
-  die "--apply needs root: the caches, logs and dumps belong to the system. Without --apply this only reports."
-fi
+# Without root, --apply cleans what needs none and leaves the rest, saying so —
+# as cleanup.ps1 does on Windows.
+NOROOT_APPLY=0
+[ "$APPLY" = 1 ] && [ "$IS_ROOT" = 0 ] && [ -z "$ROOT" ] && NOROOT_APPLY=1
 
 TEMP_AGE="${AGE:-7}" LOG_AGE="${AGE:-30}" DUMP_AGE="${AGE:-7}"
 # find arguments for "older than N days by every measure"; nothing for 0.
@@ -92,9 +104,13 @@ mapfile -d '' TEMP_OLD < <(older "$TEMP_AGE" mtime atime ctime)
 mapfile -d '' LOG_OLD < <(older "$LOG_AGE" mtime)
 mapfile -d '' DUMP_OLD < <(older "$DUMP_AGE" mtime)
 
+# Default categories run unless left out; opt-in ones only when named.
 selected() {
   local c="$1"
-  if [ "${#ONLY[@]}" -gt 0 ]; then case " ${ONLY[*]} " in *" $c "*) ;; *) return 1 ;; esac; fi
+  if [ "${#ONLY[@]}" -gt 0 ]; then case " ${ONLY[*]} " in *" $c "*) ;; *) return 1 ;; esac
+  else
+    case " $OPTIN " in *" $c "*) case " ${INCLUDE[*]} " in *" $c "*) ;; *) return 1 ;; esac ;; esac
+  fi
   case " ${SKIP[*]} " in *" $c "*) return 1 ;; esac
   return 0
 }
@@ -273,13 +289,48 @@ size_thumbnails() { thumbnail_files | sum_files; }
 how_thumbnails() { echo "regenerated on demand"; }
 clean_thumbnails() { thumbnail_files | xargs -0 -r rm -f -- || return 1; }
 
+# --- docker (opt-in) ------------------------------------------------------------
+
+# Only what nothing refers to: images left untagged by a newer build, and the
+# build cache. Docker's own reclaimable figure counts every unused image and
+# every unused volume — data, as far as this script can know — so it is not
+# what is offered here.
+docker_ok() { [ -z "$ROOT" ] && command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; }
+docker_bytes() { # Docker's "1.2GB" (decimal units) -> bytes
+  awk -v s="$1" 'BEGIN { n = s + 0; u = s; sub(/^[0-9.]+/, "", u)
+    m = (u == "kB" || u == "KB") ? 1e3 : (u == "MB") ? 1e6 : (u == "GB") ? 1e9 : (u == "TB") ? 1e12 : 1
+    printf "%d\n", n * m }'
+}
+size_docker() {
+  docker_ok || { echo "0 0"; return 0; }
+  # Each image's UNIQUE size — layers no other image shares. Adding up their
+  # plain sizes counted shared base layers once per image: 10.3G claimed where
+  # Docker itself put every unused image together at 5.1G.
+  local img cache
+  img="$(docker system df -v --format '{{range .Images}}{{.Repository}}|{{.Tag}}|{{.UniqueSize}}{{println}}{{end}}' |
+    awk -F'|' '$1 == "<none>" && $2 == "<none>" { print $3 }')"
+  cache="$(docker system df --format '{{.Type}}|{{.Reclaimable}}|{{.TotalCount}}' | awk -F'|' '$1 == "Build Cache" { split($2, a, " "); print a[1] "|" $3 }')"
+  local bytes=0 n=0 u
+  while read -r u; do [ -n "$u" ] || continue; bytes=$((bytes + $(docker_bytes "$u"))); n=$((n + 1)); done <<<"$img"
+  bytes=$((bytes + $(docker_bytes "${cache%%|*}")))
+  echo "$bytes $((n + ${cache##*|}))"
+}
+how_docker() { docker_ok && echo "dangling images, build cache" || echo "no Docker daemon reachable"; }
+clean_docker() {
+  docker image prune --force >/dev/null || return 1
+  docker builder prune --force >/dev/null || return 1
+}
+
 # --- run -----------------------------------------------------------------------
 
 [ "$IS_ROOT" = 1 ] || [ -n "$ROOT" ] || note "not root: some files cannot be read, so sizes may be incomplete"
-FAILED="" RESULTS=""
-for c in $ALL; do
+FAILED="" RESULTS="" LEFT=""
+for c in $ALL $OPTIN; do
   selected "$c" || continue
   fn="${c//-/_}"
+  if [ "$NOROOT_APPLY" = 1 ]; then
+    case " $USERLEVEL " in *" $c "*) ;; *) LEFT+=" $c"; continue ;; esac
+  fi
   if ! before="$("size_$fn")"; then note "could not size $c"; FAILED+=" $c"; continue; fi
   read -r bytes items <<<"$before"
   how="$("how_$fn")"
@@ -293,6 +344,7 @@ for c in $ALL; do
   RESULTS+="$c	$bytes	$items	$how"$'\n'
 done
 
+[ -z "$LEFT" ] || note "not root: left for root:$LEFT"
 awk -F'\t' -v fmt="$FORMAT" -v apply="$APPLY" '
   function human(b) {
     if (b >= 1073741824) return sprintf("%.1fG", b / 1073741824)
