@@ -5,13 +5,17 @@ reports by default** — how much each category would free — and deletes nothi
 without `--apply`.
 
 **Runs on:** the machine being cleaned, or another system's files with `--root`.
-**Platforms:** Linux.
+**Platforms:** Linux (`cleanup.sh`) and Windows (`cleanup.ps1`).
 **Needs:** bash and the usual tools; `--apply` needs root.
 
 ## Get it
 
 ```sh
 ./ops-get cleanup.sh v4.3.0
+```
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\ops-get.ps1 cleanup.ps1 v4.3.0
 ```
 
 ## Use it
@@ -52,6 +56,31 @@ so the number is what actually went, not what was hoped for.
 **Never touched:** documents, downloads, the trash, other caches — anything a
 user made.
 
+## On Windows
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\cleanup.ps1             # report
+powershell -ExecutionPolicy Bypass -File .\cleanup.ps1 -Apply      # clean
+.\cleanup.ps1 -Only temp,crash-dumps -OlderThan 14
+```
+
+| Category | What goes | How |
+|---|---|---|
+| `temp` | your `%TEMP%` and `C:\Windows\Temp`: files neither written nor created for 7 days, and folders that become empty | deleted |
+| `update-downloads` | `C:\Windows\SoftwareDistribution\Download`, not written for 7 days | deleted |
+| `delivery-optimization` | the Delivery Optimization cache | `Delete-DeliveryOptimizationCache` |
+| `crash-dumps` | `C:\Windows\Minidump`, `C:\Windows\MEMORY.DMP`, your `CrashDumps`, older than 7 days | deleted |
+| `error-reports` | Windows Error Reporting `ReportArchive` and `ReportQueue`, yours and the system's, older than 7 days | deleted |
+| `thumbnails` | Explorer's `thumbcache_*.db` | deleted; rebuilt on demand |
+
+- A file in use is left, and the report says how many — not a failure.
+- **Without administrator rights** your own files are sized and cleaned and the
+  system's are left alone, which it says. Cleaning your own files needs no
+  elevation.
+- Options are PowerShell-style — `-Apply`, `-Only`, `-Skip`, `-OlderThan`,
+  `-Format`, `-Help` — with the same meaning as below. The Recycle Bin is never
+  touched.
+
 ## Options
 
 Every input is a flag; `--help` lists them. Nothing is read from the environment
@@ -75,6 +104,12 @@ Exit status is `1` when a category could not be sized or cleaned; it is named,
 and the others still run.
 
 ## Tests
+
+`tests/cleanup_test.ps1` runs `cleanup.ps1` on a real Windows — GitHub's
+runners, under Windows PowerShell 5.1 and PowerShell 7 — with `TEMP` and
+`LOCALAPPDATA` pointed at test folders, ages set back through `CreationTime`
+and `LastWriteTime`, a test file in `C:\Windows\Temp`, a locked file, and files
+that must survive.
 
 `tests/cleanup_test.sh` builds a fake system and runs the script with `--root`:
 the real `apt-get` cleans its cache; pacman's and dnf's are checked for what
