@@ -11,11 +11,11 @@ without `--apply`.
 ## Get it
 
 ```sh
-./ops-get cleanup.sh v4.3.0
+./ops-get cleanup.sh v4.4.0
 ```
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\ops-get.ps1 cleanup.ps1 v4.3.0
+powershell -ExecutionPolicy Bypass -File .\ops-get.ps1 cleanup.ps1 v4.4.0
 ```
 
 ## Use it

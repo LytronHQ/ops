@@ -8,6 +8,26 @@ A new decision is added here in the PR that makes it.
 
 ---
 
+### Scripts brought in are named for what they do, and their secrets handled as data
+
+2026-10-01 · #55, #63, #65
+
+Three more came over from the project this repository was extracted from:
+its Cloudflare tunnel script, and its PocketBase upgrade and maintenance
+scripts. Read again rather than copied, two of them turned out to be more
+general than their names: the upgrade's value — a consistent snapshot, a
+rollback of the image *and* the data — holds for any containerised service,
+and the maintenance is SQLite's. So they are `upgrade/` and `database/`, with
+PocketBase as `--app pocketbase`, the same way a vendor is a `--provider`.
+
+Each had ways of handling secrets that the rules here forbid, and each is
+fixed rather than carried over: an env file `source`d — run as shell — is
+read as `KEY=VALUE` data; a password put into JSON with `printf` and handed to
+curl as an argument goes on stdin, JSON-escaped; a heartbeat URL taken from the
+environment, which is a credential too, comes from a file. The tunnel script
+also replaced any DNS record at its hostname without a word; it now refuses
+one that is not its own unless told.
+
 ### cleanup reports first, and asks before anything that might be wanted
 
 2026-10-01 · #49, #50, #52, #54, #58, #60
