@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# fake-docker — just enough of `docker` and `docker compose` for upgrade.sh,
+# first on PATH in upgrade_test.sh. State lives under $FAKE_DOCKER:
+#   running      1 while the service runs
+#   version      the version it runs
+#   mount        what backs /data (a volume name); volumes/<name>/ is its content
+#
+# Starting a version "migrates" the data, as PocketBase does: it appends a line
+# to data.db, so a rollback that does not restore the data is visible. Version
+# "broken" fails to start; version "moves" starts on another volume, as a
+# missing compose variable would.
+set -euo pipefail
+F="${FAKE_DOCKER:?}"
+echo "$*" >> "$F/calls"
+vol() { mkdir -p "$F/volumes/$1"; echo "$F/volumes/$1"; }
+
+if [ "$1" = compose ]; then
+  shift; while [ "$1" = -f ]; do shift 2; done
+  case "$1" in
+    ps)   [ "$(cat "$F/running" 2>/dev/null)" = 1 ] && echo cid1; exit 0 ;;
+    stop) echo 0 > "$F/running"; exit 0 ;;
+    up)
+      v="${APPV:?the version variable was not passed to compose}"
+      [ "$v" = broken ] && { echo "build failed" >&2; exit 1; }
+      [ "$v" = moves ] && echo vol2 > "$F/mount"
+      echo "migrated by $v" >> "$(vol "$(cat "$F/mount")")/data.db"
+      echo "$v" > "$F/version"; echo 1 > "$F/running"; exit 0 ;;
+  esac
+  exit 0
+fi
+case "$1" in
+  inspect) cat "$F/mount"; exit 0 ;;
+  run)
+    shift; vols=() image="" ; while [ $# -gt 0 ]; do
+      case "$1" in --rm) shift ;; -v) vols+=("$2"); shift 2 ;; *) image="$1"; shift; break ;; esac
+    done
+    [ "$1" = sh ] && [ "$2" = -c ] || { echo "fake-docker: unsupported run" >&2; exit 2; }
+    cmd="$3"
+    for m in "${vols[@]}"; do
+      src="${m%%:*}"; rest="${m#*:}"; dst="${rest%%:*}"
+      case "$src" in /*) ;; *) src="$(vol "$src")" ;; esac
+      cmd="${cmd//$dst/$src}"
+    done
+    sh -c "$cmd" ;;
+  *) exit 0 ;;
+esac
