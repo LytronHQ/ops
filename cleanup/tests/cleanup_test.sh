@@ -163,6 +163,50 @@ if [ "$(id -u)" != 0 ]; then
   [ "$(tail -n +2 <<<"$out" | cut -f1)" = docker ] || fail "a non-root apply ran root categories: $out"
 fi
 
+echo "== autoremove: apt's own rule, and never applied under --root =="
+A="$W/aroot"
+mkdir -p "$A/var/lib/dpkg/info" "$A/var/lib/dpkg/updates" "$A/var/lib/apt/lists/partial" "$A/etc/apt/apt.conf.d" \
+         "$A/etc/apt/preferences.d" "$A/etc/apt/sources.list.d" "$A/var/cache/apt/archives/partial"
+touch "$A/var/lib/dpkg/available" "$A/etc/apt/sources.list"
+arch="$(dpkg --print-architecture)"
+for p in "keepme|usedlib|" "usedlib||" "orphanlib||2048"; do
+  IFS='|' read -r name dep size <<<"$p"
+  { echo "Package: $name"; echo "Status: install ok installed"; echo "Architecture: $arch"; echo "Version: 1.0"
+    [ -z "$dep" ] || echo "Depends: $dep"; [ -z "$size" ] || echo "Installed-Size: $size"
+    echo "Maintainer: t <t@example.com>"; echo "Description: $name"; echo; } >> "$A/var/lib/dpkg/status"
+done
+printf 'Package: usedlib\nArchitecture: %s\nAuto-Installed: 1\n\nPackage: orphanlib\nArchitecture: %s\nAuto-Installed: 1\n\n' "$arch" "$arch" \
+  > "$A/var/lib/apt/extended_states"
+bash "$SCRIPT" --root "$A" --format tsv 2>/dev/null | cut -f1 | grep -qx autoremove && fail "autoremove ran without being named"
+out="$(bash "$SCRIPT" --root "$A" --only autoremove --format tsv 2>/dev/null | tail -1)"
+[ "$(cut -f2,3 <<<"$out")" = $'2097152\t1' ] || fail "autoremove should be orphanlib alone (usedlib is still needed): $out"
+grep -q "reported only under --root" <<<"$out" || fail "did not say it is report-only under --root: $out"
+cp "$A/var/lib/dpkg/status" "$W/status.before"
+out="$(bash "$SCRIPT" --root "$A" --apply --only autoremove --format tsv 2>/dev/null | tail -1)"
+cmp -s "$A/var/lib/dpkg/status" "$W/status.before" || fail "autoremove changed packages under --root"
+[ "$(cut -f2 <<<"$out")" = 0 ] || fail "autoremove claimed to free something under --root: $out"
+
+echo "== snap-revisions: only what snap lists as disabled =="
+mkdir -p "$W/sbin"
+cat > "$W/sbin/snap" <<'EOF'
+#!/bin/sh
+case "$1 $2" in
+  "list --all") cat <<'T'
+Name    Version  Rev   Tracking       Publisher    Notes
+core22  2024     1000  latest/stable  canonical**  base
+core22  2023     900   latest/stable  canonical**  base,disabled
+firefox 150      70    latest/stable  mozilla**    -
+firefox 149      69    latest/stable  mozilla**    disabled
+code    1.2      20    latest/stable  vscode**     disabled,classic
+T
+  ;;
+esac
+EOF
+chmod +x "$W/sbin/snap"
+out="$(PATH="$W/sbin:$PATH" bash "$SCRIPT" --only snap-revisions --format tsv 2>/dev/null | tail -1)"
+[ "$(cut -f3 <<<"$out")" = 3 ] || fail "should count the 3 disabled revisions, not the enabled ones: $out"
+PATH="$W/sbin:$PATH" bash "$SCRIPT" --format tsv 2>/dev/null | cut -f1 | grep -qx snap-revisions && fail "snap-revisions ran without being named"
+
 echo "== --only, --skip, formats, bad input =="
 [ "$(run --only temp,journal --format tsv | tail -n +2 | cut -f1 | tr '\n' ' ')" = "temp journal " ] || fail "--only"
 run --skip package-cache --format tsv | cut -f1 | grep -qx package-cache && fail "--skip"

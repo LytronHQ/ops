@@ -64,10 +64,18 @@ that is junk on most machines and wanted on some.
 | Category | What goes | How |
 |---|---|---|
 | `docker` | dangling images — untagged leftovers of rebuilt ones — and the build cache | `docker image prune` (never `--all`), `docker builder prune`. **Never** tagged images, containers, volumes or networks. Sized by each image's *unique* size: plain sizes count shared layers once per image and overstate it |
+| `autoremove` | packages installed only as dependencies of something since removed — old kernels included, by apt's own policy of keeping two | `apt-get autoremove`, `dnf autoremove`, pacman orphans (`-Qtdq` → `-Rns`). Opt-in because "a dependency" is the package manager's record, not the user's intent |
+| `snap-revisions` | revisions snap lists as **disabled** — kept after each refresh, often hundreds of MB each | `snap remove <name> --revision=<rev>`; the active revision is never touched |
+
+Under `--root`, `autoremove` and `snap-revisions` are reported and never
+applied. apt's `-o Dir` moves where it *reads*, but removing a package still
+runs the host's `dpkg` — applying there could remove packages from the machine
+itself. snapd answers only for the running system.
 
 ```sh
 ./cleanup.sh --include docker
 ./cleanup.sh --apply --include docker      # as anyone who can reach the daemon, rootless too
+sudo ./cleanup.sh --apply --include autoremove,snap-revisions
 ```
 
 ## On Windows
