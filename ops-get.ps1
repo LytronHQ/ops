@@ -9,6 +9,8 @@
 #
 #   .\ops-get.ps1 server.ps1 v5.0.0
 #
+# A version is a release tag, v5.0.0; 5.0.0 means the same.
+#
 # Options - every input is one; nothing is read from the environment:
 #   -List <version>     list the scripts in a version, from its SHA256SUMS;
 #                       those whose MANIFEST excludes this platform are marked
@@ -58,6 +60,8 @@ if ($List) { $Version = $List }
 elseif (-not $Script) { Show-Usage | ForEach-Object { [Console]::Error.WriteLine($_) }; exit 1 }
 elseif (-not $Version) { Stop-OpsGet "which version? ops-get.ps1 $Script <version>   (see: ops-get.ps1 -List <version>)" }
 if ($Script -match '[\\/]') { Stop-OpsGet "'$Script': a script name, not a path - release assets are flat" }
+# Tags are v<number>; a bare number means that tag, not a missing version.
+if ($Version -match '^[0-9]') { $Version = "v$Version" }
 if (-not $Destination) { $Destination = Join-Path '.' $Script }
 if (-not $BaseUrl) { $BaseUrl = "https://github.com/$Repo/releases/download/$Version" }
 $BaseUrl = $BaseUrl.TrimEnd('/')

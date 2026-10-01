@@ -15,6 +15,7 @@
 #   8. OPS_BASE_URL in the environment is ignored; only --base-url counts
 #   9. with a MANIFEST, --list marks what does not run here, a fetch of it
 #      says so, and a MANIFEST that does not match SHA256SUMS is refused
+#  10. a version without its v means the tag with one
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -87,6 +88,13 @@ refused "no sums" nosums hello.sh "cannot get SHA256SUMS"
 
 echo "== a version that does not exist is refused, and may be new =="
 refused "missing version" v9.9.9 hello.sh "still being published"
+
+echo "== a version without its v means the tag with one =="
+out="$(sh "$OPS_GET" --base-url "http://127.0.0.1:$PORT/v1.0.0" nope.sh 1.0.0 "$WORK/out/nope" 2>&1)" \
+  && fail "a missing script was fetched"
+grep -q "nope.sh is not in v1.0.0" <<<"$out" || fail "1.0.0 was not read as v1.0.0: $out"
+out="$(sh "$OPS_GET" --base-url "http://127.0.0.1:$PORT/v1.0.0" --list 1.0.0)" || fail "--list 1.0.0 failed"
+[ "$out" = "hello.sh" ] || fail "--list 1.0.0 printed: $out"
 
 echo "== --list prints what the release vouches for =="
 out="$(sh "$OPS_GET" --base-url "http://127.0.0.1:$PORT/v1.0.0" --list v1.0.0)" || fail "--list failed"

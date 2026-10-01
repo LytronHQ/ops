@@ -9,7 +9,7 @@
 #
 # What it asserts: a good fetch lands; a tampered file, a missing script, an
 # unlisted script, a release without SHA256SUMS and a missing version are
-# refused with nothing written; -List marks what does not run here; a fetch of
+# refused with nothing written; a version without its v means the tag; -List marks what does not run here; a fetch of
 # such a script says so; a tampered MANIFEST is refused; usage and -Help.
 $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $PSCommandPath
@@ -92,6 +92,10 @@ try {
   Refused 'unlisted' 'v1' 'unlisted.ps1' 'unlisted.ps1 is not in v1'
   Refused 'no sums' 'nosums' 'hello.ps1' 'cannot get SHA256SUMS'
   Refused 'missing version' 'v9' 'hello.ps1' 'still being published'
+
+  'a version without its v means the tag with one'
+  $r = Invoke-OpsGet nope.ps1 1 (Join-Path $out 'nope.ps1') -BaseUrl "$base/v1"
+  if ($r.Out -notlike '*nope.ps1 is not in v1.*') { Fail "1 was not read as v1: $($r.Out)" }
 
   '-List marks what does not run here'
   $r = Invoke-OpsGet -List v1 -BaseUrl "$base/manifest"
