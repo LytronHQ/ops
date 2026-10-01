@@ -10,6 +10,7 @@ self-contained file with no imports and nothing about my projects baked in.
 | [`access/`](access/) | gate a hostname so only machines with a service token get through (Cloudflare) | your machine or CI | `access.sh` |
 | [`secrets/`](secrets/) | an environment's config from a secrets manager, ready to source (Bitwarden) | your machine or CI | `secrets.sh` |
 | [`inventory/`](inventory/) | installed software, and which package manager put it there | the machine being inspected, Linux or Windows | `inventory.sh`, `inventory.ps1` |
+| [`cleanup/`](cleanup/) | reclaim disk space: package caches, old temp files, journal, logs, dumps — reports first | the machine being cleaned | `cleanup.sh` |
 
 Every script is fetched the same way, whichever machine it runs on: `ops-get`
 downloads it from a pinned release and verifies its checksum. There is no second
