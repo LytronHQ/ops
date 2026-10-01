@@ -25,7 +25,10 @@
 # PowerShell 7 too. Downloaded scripts are blocked by the default execution
 # policy, so the first run is usually:
 #   powershell -ExecutionPolicy Bypass -File .\ops-get.ps1 ...
-[CmdletBinding()]
+# PositionalBinding off: a stray argument is an error, not a value for some
+# other parameter. Through `powershell -File`, `-Only a,b` arrives as two
+# arguments, and the second used to land silently in the next parameter.
+[CmdletBinding(PositionalBinding = $false)]
 param(
   [Parameter(Position = 0)] [string] $Script,
   [Parameter(Position = 1)] [string] $Version,
