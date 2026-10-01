@@ -129,7 +129,9 @@ function Get-Places([string] $category) {
       # This user's bin on every fixed drive: $Recycle.Bin\<SID>.
       $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
       foreach ($d in [IO.DriveInfo]::GetDrives()) {
-        if ($d.DriveType -eq 'Fixed' -and $d.IsReady) { @{ Path = Join-Path $d.RootDirectory.FullName "`$Recycle.Bin\$sid"; Aged = $false; Admin = $false } }
+        # desktop.ini is the bin's own metadata, kept by Clear-RecycleBin; counted,
+        # it made an emptied bin look 258 bytes full.
+        if ($d.DriveType -eq 'Fixed' -and $d.IsReady) { @{ Path = Join-Path $d.RootDirectory.FullName "`$Recycle.Bin\$sid"; Aged = $false; Admin = $false; Keep = 'desktop.ini' } }
       }
     }
     'package-caches' {
@@ -184,6 +186,7 @@ function Get-Files([string] $category) {
       $items = @(Get-ChildItem -LiteralPath $p.Path -Recurse -File -Force -Filter $filter -ErrorAction SilentlyContinue)
     }
     foreach ($f in $items) {
+      if ($p.Keep -and $f.Name -eq $p.Keep) { continue }
       # Young by any measure Windows keeps reliably: written, or created (a
       # copied-in file keeps an old write time but gets a new creation time).
       if ($p.Aged -and $Age -gt 0 -and ($f.LastWriteTime -gt $Cutoff -or $f.CreationTime -gt $Cutoff)) { continue }
