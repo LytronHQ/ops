@@ -10,6 +10,8 @@
 #
 #   ops-get server.sh v5.0.0 /tmp/server.sh
 #
+# A version is a release tag, v5.0.0; 5.0.0 means the same.
+#
 # Options — every input is one; nothing is read from the environment:
 #   --list <version>    list the scripts in a version, from its SHA256SUMS;
 #                       those whose MANIFEST excludes this platform are marked
@@ -65,6 +67,8 @@ if [ -z "$LIST" ]; then
   [ -n "$VERSION" ] || die "which version? ops-get $SCRIPT <version>   (see: ops-get --list <version>)"
   case "$SCRIPT" in */*) die "'$SCRIPT': a script name, not a path — release assets are flat" ;; esac
 fi
+# Tags are v<number>; a bare number means that tag, not a missing version.
+case "$VERSION" in [0-9]*) VERSION="v$VERSION" ;; esac
 DEST="${DEST:-./$SCRIPT}"
 BASE="${BASE:-https://github.com/${REPO}/releases/download/${VERSION}}"
 
