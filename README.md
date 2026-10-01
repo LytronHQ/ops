@@ -32,8 +32,8 @@ A fresh server has `curl` and little else. `ops-get` fetches one script from a
 pinned release and verifies it before it ever runs.
 
 ```sh
-curl -fsSL https://github.com/LytronHQ/ops/releases/download/v5.0.0/ops-get -o ops-get
-echo "92b74e484d7f9ddfbe9942270eee13830904f939ccb25a18ecf1793f72ad6840  ops-get" | sha256sum -c
+curl -fsSL https://github.com/LytronHQ/ops/releases/download/v5.0.1/ops-get -o ops-get
+echo "f03a53da81ff9cc3598860288ab14733ff3c3a5e03187865d9e023234899099c  ops-get" | sha256sum -c
 chmod +x ops-get
 
 ./ops-get --list v5.0.0                    # what this version has
@@ -44,6 +44,12 @@ sudo /tmp/server.sh harden
 The second line checks `ops-get` itself against the hash printed here, before
 it runs. Everything after that, `ops-get` checks for you.
 
+Two versions appear here, and they are independent. The one in the `curl` URL
+is `ops-get`'s own. The one you give `ops-get` is the release of the script it
+fetches. Any `ops-get` fetches from any release: with this one,
+`./ops-get --list v4.0.0` lists v4.0.0's scripts. Keep one `ops-get`, and pin
+each script at the version you want.
+
 ### On Windows
 
 `ops-get.ps1` does the same in PowerShell — Windows PowerShell 5.1, which every
@@ -51,8 +57,8 @@ Windows has, or PowerShell 7:
 
 ```powershell
 [Net.ServicePointManager]::SecurityProtocol = 'Tls12'   # Windows PowerShell 5.1 needs this for GitHub
-Invoke-WebRequest https://github.com/LytronHQ/ops/releases/download/v5.0.0/ops-get.ps1 -OutFile ops-get.ps1 -UseBasicParsing
-if ((Get-FileHash .\ops-get.ps1).Hash -ne '07887BB46EDBF397854A48099A92454D0385086DAE970D0ADEDA06B609E5F2CE') { throw 'ops-get.ps1 does not match' }
+Invoke-WebRequest https://github.com/LytronHQ/ops/releases/download/v5.0.1/ops-get.ps1 -OutFile ops-get.ps1 -UseBasicParsing
+if ((Get-FileHash .\ops-get.ps1).Hash -ne '4817E306C337F9800BDB40D08470BF5728D5975E98AFC7D730D003D0EAC12F1E') { throw 'ops-get.ps1 does not match' }
 
 powershell -ExecutionPolicy Bypass -File .\ops-get.ps1 -List v5.0.0
 powershell -ExecutionPolicy Bypass -File .\ops-get.ps1 server.ps1 v5.0.0
@@ -73,7 +79,7 @@ ops-get --list <version>
 | Argument | Required | Meaning |
 |---|---|---|
 | `<script>` | yes | the asset filename, e.g. `server.sh`. No path — release assets are flat |
-| `<version>` | yes | a release tag, e.g. `v5.0.0`. There is deliberately no "latest" |
+| `<version>` | yes | the release to fetch the script from, e.g. `v5.0.0`; `5.0.0` means the same (an `ops-get` older than v5.0.1 needs the `v`). This is the script's version, not `ops-get`'s: any `ops-get` fetches from any release. There is deliberately no "latest" |
 | `[destination]` | no | where to write it. Default: `./<script>` |
 
 | Flag | Default | Meaning |
