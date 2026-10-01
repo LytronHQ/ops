@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# database_test.sh — run database.sh maintain against real SQLite files and a
+# maintain_test.sh — run db.sh maintain against real SQLite files and a
 # stub PocketBase, and check what it does, in what order.
 #
 #   database/tests/database_test.sh
@@ -17,7 +17,7 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-SCRIPT="$HERE/../database.sh"
+SCRIPT="$HERE/../db.sh"
 W="$(mktemp -d)"
 trap 'rm -rf "$W"; [ -n "${STUB_PID:-}" ] && kill "$STUB_PID" 2>/dev/null || true; [ -n "${HOLD_PID:-}" ] && kill "$HOLD_PID" 2>/dev/null || true' EXIT
 fail() { echo "FAIL: $*" >&2; exit 1; }
@@ -127,7 +127,7 @@ pb --no-backup || fail "--no-backup: $(cat "$W/log")"
 
 echo "== bad input =="
 bad() { local want="$1" out; shift; out="$(bash "$SCRIPT" "$@" 2>&1)" && fail "accepted: $*"; grep -q -- "$want" <<<"$out" || fail "$*: $out"; }
-bad "unknown command 'vacuum'"        vacuum --db "$W/a.db"
+bad "unknown action 'vacuum'"        vacuum --db "$W/a.db"
 bad "--db is required"                 maintain
 bad "--engine 'postgres' is not"      maintain --engine postgres --db x
 bad "needs --credentials-file"         maintain --db "$W/a.db" --app pocketbase

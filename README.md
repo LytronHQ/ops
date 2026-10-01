@@ -3,16 +3,18 @@
 Scripts for the boring parts of running a machine. Each one is a single
 self-contained file with no imports and nothing about my projects baked in.
 
-| Module | What it does | Runs on | Scripts |
+Each module is a **subject**, with an **action** as the first argument:
+`./server.sh cleanup`, `./edge.sh tunnel`. `<script> <action> --help` lists that
+action's options.
+
+| Subject | Actions | What for | Runs on |
 |---|---|---|---|
-| [`harden/`](harden/) | firewall, auto-updates, fail2ban, key-only SSH | the server you are configuring | `server.sh harden` |
-| [`vmlab/`](vmlab/) | libvirt VMs without sudo: a throwaway lab or a single VM | your own machine | `vmlab.sh` |
-| [`edge/`](edge/) | how traffic reaches a service: a `tunnel` to it, an `access` gate in front of it (Cloudflare) | your machine or CI | `edge.sh` |
-| [`secrets/`](secrets/) | an environment's config from a secrets manager, ready to source (Bitwarden) | your machine or CI | `secrets.sh` |
-| [`inventory/`](inventory/) | installed software, and which package manager put it there | the machine being inspected, Linux or Windows | `server.sh inventory`, `server.ps1 inventory` |
-| [`cleanup/`](cleanup/) | reclaim disk space: package caches, old temp files, journal, logs, dumps — reports first | the machine being cleaned, Linux or Windows | `server.sh cleanup`, `server.ps1 cleanup` |
-| [`upgrade/`](upgrade/) | upgrade a containerised service, snapshot first, roll back image and data on failure | the host running it | `upgrade.sh` |
-| [`database/`](database/) | routine SQLite maintenance: checkpoint, bounded vacuum, the app's backup, a heartbeat | the host with the database | `database.sh` |
+| [`server/`](server/) — `server.sh`, `server.ps1` | `harden`, `cleanup`, `inventory` | looking after a machine: firewall and SSH, disk space, what is installed. Windows: `cleanup`, `inventory` | the machine itself |
+| [`container/`](container/) — `container.sh` | `upgrade` | a containerised service: upgrade it, snapshot first, roll back image and data on failure | the host running it |
+| [`db/`](db/) — `db.sh` | `maintain` | a SQLite database: checkpoint, bounded vacuum, the app's backup, a heartbeat | the host with the database |
+| [`edge/`](edge/) — `edge.sh` | `tunnel`, `access` | how traffic reaches a service: a tunnel to it, a service-token gate in front of it (Cloudflare) | your machine or CI |
+| [`secrets/`](secrets/) — `secrets.sh` | `env` | an environment's secrets, ready to source (Bitwarden) | your machine or CI |
+| [`vmlab/`](vmlab/) — `vmlab.sh` | `create`, `destroy`, `start`, `stop`, `status`, `ips` | throwaway libvirt VMs without sudo | your own machine |
 
 Every script is fetched the same way, whichever machine it runs on: `ops-get`
 downloads it from a pinned release and verifies its checksum. There is no second

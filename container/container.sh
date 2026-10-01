@@ -1,73 +1,94 @@
 #!/usr/bin/env bash
 #
-# upgrade.sh — upgrade a containerised service to a new version, with a
-# consistent snapshot of its data taken first and an automatic rollback — of
-# the image AND the data — if it does not come back healthy. Run on the host.
+# container.sh — looking after a containerised service on its host.
 #
 # platforms: linux
 #
-#   ./upgrade.sh --compose /opt/app/compose.yml --service app --to 2.4.0 \
-#     --version-var APP_VERSION --env-file /etc/app/app.env \
-#     --data /data --health-url http://127.0.0.1:8080/healthz
+#   sudo ./container.sh upgrade --compose /opt/app/compose.yml --service app --to 2.4.0 …
+#   ./container.sh <action> --help        every option of that action
 #
-#   ./upgrade.sh --app pocketbase --compose /opt/pb/compose.yml --service pocketbase \
-#     --to 0.29.0 --env-file /etc/pb/pb.env --credentials-file /etc/pb/pb.env --build
-#
-# Why stop first: a database writing as it is copied — SQLite with a WAL, most
-# of all — does not give a copy you can roll back to. A short, deliberate
-# outage is the price of a snapshot that is actually consistent. And why the
-# data rolls back too: an application that migrates its data on start leaves
-# it unreadable to the old version, so putting the old image back alone does
-# not undo an upgrade.
-#
-# The local snapshot is the rollback source; rollback never depends on a
-# download. --after-snapshot can ship a copy elsewhere, in the background,
-# without ever holding the upgrade up.
-#
-# The compose file must take the version from a variable — image: app:${APP_VERSION}
-# or a build argument — which this sets for the new version and, on success,
-# writes into --env-file.
-#
-# Options — every input is one; nothing is read from the environment:
-#   --compose <file>         the compose file (required)
-#   --service <name>         the service to upgrade (required)
-#   --to <version>           the version to upgrade to (required)
-#   --version-var <name>     the variable the compose file reads the version
-#                            from (default VERSION; pocketbase: PB_VERSION)
-#   --env-file <file>        KEY=VALUE file handed to compose; the current
-#                            version is read from it and the new one written to
-#                            it. Read as data, never run
-#   --from <version>         the current version, when no env file says
-#   --data <path>            the data directory INSIDE the container to
-#                            snapshot (required; pocketbase: /pb_data)
-#   --health-url <url>       must answer 2xx for the service to count as up
-#                            (required; pocketbase: <url>/api/health)
-#   --health-retries <n>     tries, 2s apart (default 30)
-#   --expect <name>          a file the snapshot must contain, or the upgrade
-#                            stops before starting (pocketbase: data.db)
-#   --min-snapshot-bytes <n> a smaller snapshot stops the upgrade (default 1;
-#                            pocketbase: 65536)
-#   --snapshots <dir>        where snapshots go (default /var/backups/<service>)
-#   --keep <n>               snapshots kept after a successful upgrade (3)
-#   --build                  rebuild the image (compose up --build)
-#   --after-snapshot <cmd>   run as `<cmd> <snapshot>` in the background, best
-#                            effort — an offsite copy, say
-#   --helper-image <image>   small image used to read and write the volume
-#                            (default alpine:3.20)
-#   --app <name>             defaults for a known application: pocketbase
-#   --url <url>              pocketbase: its base URL (default http://127.0.0.1:8090)
-#   --credentials-file <f>   pocketbase: PB_SUPERUSER_EMAIL / _PASSWORD lines;
-#                            the health check then also logs in, which proves
-#                            the database is readable, not just the port open
-#   --health-collection <c>  pocketbase: also read a record of this collection
-#   -h, --help               this text
+# Actions:
+#   upgrade   move a compose service to a new version: snapshot its data first,
+#             and roll back the image and the data if it does not come back
+#             healthy
 set -euo pipefail
 shopt -s inherit_errexit
+
+# ============================================================================
+# container.sh upgrade
+# ============================================================================
+
+help_upgrade() {
+cat <<'HELP_END'
+container.sh upgrade — upgrade a containerised service to a new version, with a
+consistent snapshot of its data taken first and an automatic rollback — of
+the image AND the data — if it does not come back healthy. Run on the host.
+
+
+  ./container.sh upgrade --compose /opt/app/compose.yml --service app --to 2.4.0 \
+    --version-var APP_VERSION --env-file /etc/app/app.env \
+    --data /data --health-url http://127.0.0.1:8080/healthz
+
+  ./container.sh upgrade --app pocketbase --compose /opt/pb/compose.yml --service pocketbase \
+    --to 0.29.0 --env-file /etc/pb/pb.env --credentials-file /etc/pb/pb.env --build
+
+Why stop first: a database writing as it is copied — SQLite with a WAL, most
+of all — does not give a copy you can roll back to. A short, deliberate
+outage is the price of a snapshot that is actually consistent. And why the
+data rolls back too: an application that migrates its data on start leaves
+it unreadable to the old version, so putting the old image back alone does
+not undo an upgrade.
+
+The local snapshot is the rollback source; rollback never depends on a
+download. --after-snapshot can ship a copy elsewhere, in the background,
+without ever holding the upgrade up.
+
+The compose file must take the version from a variable — image: app:${APP_VERSION}
+or a build argument — which this sets for the new version and, on success,
+writes into --env-file.
+
+Options — every input is one; nothing is read from the environment:
+  --compose <file>         the compose file (required)
+  --service <name>         the service to upgrade (required)
+  --to <version>           the version to upgrade to (required)
+  --version-var <name>     the variable the compose file reads the version
+                           from (default VERSION; pocketbase: PB_VERSION)
+  --env-file <file>        KEY=VALUE file handed to compose; the current
+                           version is read from it and the new one written to
+                           it. Read as data, never run
+  --from <version>         the current version, when no env file says
+  --data <path>            the data directory INSIDE the container to
+                           snapshot (required; pocketbase: /pb_data)
+  --health-url <url>       must answer 2xx for the service to count as up
+                           (required; pocketbase: <url>/api/health)
+  --health-retries <n>     tries, 2s apart (default 30)
+  --expect <name>          a file the snapshot must contain, or the upgrade
+                           stops before starting (pocketbase: data.db)
+  --min-snapshot-bytes <n> a smaller snapshot stops the upgrade (default 1;
+                           pocketbase: 65536)
+  --snapshots <dir>        where snapshots go (default /var/backups/<service>)
+  --keep <n>               snapshots kept after a successful upgrade (3)
+  --build                  rebuild the image (compose up --build)
+  --after-snapshot <cmd>   run as `<cmd> <snapshot>` in the background, best
+                           effort — an offsite copy, say
+  --helper-image <image>   small image used to read and write the volume
+                           (default alpine:3.20)
+  --app <name>             defaults for a known application: pocketbase
+  --url <url>              pocketbase: its base URL (default http://127.0.0.1:8090)
+  --credentials-file <f>   pocketbase: PB_SUPERUSER_EMAIL / _PASSWORD lines;
+                           the health check then also logs in, which proves
+                           the database is readable, not just the port open
+  --health-collection <c>  pocketbase: also read a record of this collection
+  -h, --help               this text
+HELP_END
+}
+
+action_upgrade() {
 
 ts()  { date -u +%FT%TZ; }
 log() { echo "[upgrade $(ts)] $*" >&2; }
 die() { echo "[upgrade $(ts)] ERROR: $*" >&2; exit 1; }
-usage() { sed -n '3,/^set -euo/p' "$0" | sed '$d; s/^# \{0,1\}//'; }
+usage() { help_upgrade; }
 
 COMPOSE="" SERVICE="" TARGET="" VVAR="" ENV_FILE="" CURRENT="" DATA="" HEALTH_URL="" RETRIES=30
 EXPECT="" MIN_BYTES="" SNAP_DIR="" KEEP=3 BUILD=0 AFTER="" HELPER="alpine:3.20" APP="" URL="" CREDS="" COLLECTION=""
@@ -295,3 +316,14 @@ fi
 find "$SNAP_DIR" -maxdepth 1 -name "$SERVICE-*.tar.gz" -printf '%T@ %p\n' | sort -rn | tail -n +$((KEEP + 1)) |
   cut -d' ' -f2- | while IFS= read -r old; do rm -f -- "$old"; done
 log "upgraded $SERVICE: $CURRENT -> $TARGET (kept the last $KEEP snapshot(s) in $SNAP_DIR)"
+}
+
+# ============================================================================
+
+subject_usage() { sed -n '3,/^set -euo/p' "$0" | sed '$d; s/^# \{0,1\}//'; }
+case "${1:-}" in
+  upgrade) shift; action_upgrade "$@" ;;
+  -h|--help|help) subject_usage ;;
+  "") subject_usage >&2; exit 1 ;;
+  *) echo "container.sh: unknown action '$1'. Actions: upgrade" >&2; exit 1 ;;
+esac

@@ -1,4 +1,4 @@
-# database
+# db
 
 Routine maintenance of a database, run unattended — a systemd timer, cron. For
 SQLite: fold the WAL back, reclaim a bounded number of free pages, optionally
@@ -12,16 +12,16 @@ worked.
 ## Get it
 
 ```sh
-./ops-get database.sh v4.4.0
+./ops-get db.sh v4.4.0
 ```
 
 ## Use it
 
 ```sh
-./database.sh maintain --db /var/lib/app/app.db
+./db.sh maintain --db /var/lib/app/app.db
 
 # PocketBase in a container, with its own backup and a heartbeat:
-./database.sh maintain --container pocketbase --db /pb_data/data.db \
+./db.sh maintain --container pocketbase --db /pb_data/data.db \
   --app pocketbase --credentials-file /etc/pb/pb.env \
   --heartbeat-url-file /etc/pb/heartbeat.url
 ```
@@ -94,7 +94,7 @@ fails — and then there is no heartbeat.
 
 ## Tests
 
-`tests/database_test.sh` runs the script against real SQLite files and a stub
+`tests/maintain_test.sh` runs the script against real SQLite files and a stub
 PocketBase: the WAL folded in and the vacuum bounded to exactly
 `--vacuum-pages`; a non-incremental database skipped, not converted; a reader
 blocking the checkpoint as a warning; the backup requested only after the

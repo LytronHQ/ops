@@ -1,57 +1,81 @@
 #!/usr/bin/env bash
 #
-# secrets.sh — materialise an environment's configuration from a secrets
-# manager: secrets from one or more projects, plus optional non-secret
-# settings, as KEY='value' lines ready to source.
+# secrets.sh — an environment's secrets, from the secrets manager that holds
+# them.
 #
 # platforms: linux
 #
-# Providers: bitwarden (Bitwarden Secrets Manager, through its `bws` CLI).
-# The capability is the name; the vendor is a --provider, the way the OS is
-# for server.sh harden. Another provider is another branch here, not another script.
+#   ./secrets.sh env --access-token-file ~/.config/bws/prod --project <id> --out .env
+#   ./secrets.sh <action> --help        every option of that action
 #
-#   ./secrets.sh --access-token-file ~/.config/bws/production \
-#     --project <shared-project-id> --project <production-project-id> \
-#     --vars production.vars --out .env.production
+# Actions:
+#   env   materialise secrets (and non-secret settings) as KEY='value' lines
+#         ready to source
 #
-#   # in CI, the machine account's token on stdin:
-#   printf '%s' "$BWS_ACCESS_TOKEN" | ./secrets.sh --access-token-file - --project <id>
-#
-#   set -a; . ./.env.production; set +a        # use it
-#
-# Later wins: the --vars file first, then each --project in the order given. So
-# list a shared project before an environment's own, and the environment can
-# override anything shared. Each key appears once in the output, sorted.
-#
-# Options — every input is one; nothing is read from the environment:
-#   --provider <name>          where the secrets live: bitwarden (the default,
-#                              and the only one so far)
-#   --project <id>             a Secrets Manager project to read; repeatable,
-#                              later ones win (at least one required)
-#   --access-token-file <path> file holding the machine account's access
-#                              token, or - for stdin (required). A file, never
-#                              a value: argv is readable by every user via ps.
-#   --vars <file>              non-secret KEY=value lines, read first; # starts
-#                              a comment. For settings that belong in git.
-#   --out <file>               write here, mode 0600, instead of stdout. Written
-#                              whole or not at all.
-#   --server-url <url>         bitwarden: a self-hosted server
-#   -h, --help                 this text
-#
-# Values are single-quoted for the shell, so spaces, quotes, $, backticks and
-# newlines — an SSH key, a cron expression — survive being sourced. A key that
-# is not a valid shell variable name stops the run, rather than breaking
-# whatever sources the output.
-#
-# Needs jq, and for bitwarden its `bws` CLI. Runs on a workstation or
-# in CI, not on a target host.
+# Providers: bitwarden (Bitwarden Secrets Manager), the default.
 set -euo pipefail
+shopt -s inherit_errexit
+
+# ============================================================================
+# secrets.sh env
+# ============================================================================
+
+help_env() {
+cat <<'HELP_END'
+secrets.sh env — materialise an environment's configuration from a secrets
+manager: secrets from one or more projects, plus optional non-secret
+settings, as KEY='value' lines ready to source.
+
+
+Providers: bitwarden (Bitwarden Secrets Manager, through its `bws` CLI).
+The capability is the name; the vendor is a --provider, the way the OS is
+for server.sh harden. Another provider is another branch here, not another script.
+
+  ./secrets.sh env --access-token-file ~/.config/bws/production \
+    --project <shared-project-id> --project <production-project-id> \
+    --vars production.vars --out .env.production
+
+  # in CI, the machine account's token on stdin:
+  printf '%s' "$BWS_ACCESS_TOKEN" | ./secrets.sh env --access-token-file - --project <id>
+
+  set -a; . ./.env.production; set +a        # use it
+
+Later wins: the --vars file first, then each --project in the order given. So
+list a shared project before an environment's own, and the environment can
+override anything shared. Each key appears once in the output, sorted.
+
+Options — every input is one; nothing is read from the environment:
+  --provider <name>          where the secrets live: bitwarden (the default,
+                             and the only one so far)
+  --project <id>             a Secrets Manager project to read; repeatable,
+                             later ones win (at least one required)
+  --access-token-file <path> file holding the machine account's access
+                             token, or - for stdin (required). A file, never
+                             a value: argv is readable by every user via ps.
+  --vars <file>              non-secret KEY=value lines, read first; # starts
+                             a comment. For settings that belong in git.
+  --out <file>               write here, mode 0600, instead of stdout. Written
+                             whole or not at all.
+  --server-url <url>         bitwarden: a self-hosted server
+  -h, --help                 this text
+
+Values are single-quoted for the shell, so spaces, quotes, $, backticks and
+newlines — an SSH key, a cron expression — survive being sourced. A key that
+is not a valid shell variable name stops the run, rather than breaking
+whatever sources the output.
+
+Needs jq, and for bitwarden its `bws` CLI. Runs on a workstation or
+in CI, not on a target host.
+HELP_END
+}
+
+action_env() {
 # set -e does not reach inside $(…) without this; a failed bws call there
 # would otherwise be carried past.
 shopt -s inherit_errexit
 
 die() { echo "error: $*" >&2; exit 1; }
-usage() { sed -n '3,/^set -euo/p' "$0" | sed '$d; s/^# \{0,1\}//'; }
+usage() { help_env; }
 
 PROVIDER="bitwarden" PROJECTS=() TOKEN_FILE="" VARS="" OUT="" SERVER_URL=""
 while [ $# -gt 0 ]; do
@@ -151,3 +175,14 @@ chmod 600 "$tmp"
 mv "$tmp" "$OUT"
 trap - EXIT
 echo "$OUT" >&2
+}
+
+# ============================================================================
+
+subject_usage() { sed -n '3,/^set -euo/p' "$0" | sed '$d; s/^# \{0,1\}//'; }
+case "${1:-}" in
+  env) shift; action_env "$@" ;;
+  -h|--help|help) subject_usage ;;
+  "") subject_usage >&2; exit 1 ;;
+  *) echo "secrets.sh: unknown action '$1'. Actions: env" >&2; exit 1 ;;
+esac

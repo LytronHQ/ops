@@ -1,5 +1,13 @@
 # secrets
 
+An environment's secrets, from the secrets manager that holds them. One
+action so far: **`env`**.
+
+```sh
+./secrets.sh env --help
+```
+
+
 Materialise an environment's configuration from a secrets manager: secrets from
 one or more projects, plus optional non-secret settings, as `KEY='value'` lines
 ready to source. The secrets manager holds the values; your repository holds, at
@@ -22,7 +30,7 @@ and `jq`, and a machine-account access token with read access to the projects.
 ## Use it
 
 ```sh
-./secrets.sh --access-token-file ~/.config/bws/production \
+./secrets.sh env --access-token-file ~/.config/bws/production \
   --project <shared-project-id> --project <production-project-id> \
   --vars production.vars --out .env.production
 
@@ -32,7 +40,7 @@ set -a; . ./.env.production; set +a
 In CI, where the token is already a secret variable, hand it over on stdin:
 
 ```sh
-printf '%s' "$BWS_ACCESS_TOKEN" | ./secrets.sh --access-token-file - --project <id>
+printf '%s' "$BWS_ACCESS_TOKEN" | ./secrets.sh env --access-token-file - --project <id>
 ```
 
 **Later wins.** The `--vars` file is read first, then each `--project` in the

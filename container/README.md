@@ -1,4 +1,14 @@
-# upgrade
+# container
+
+Looking after a containerised service on its host. One action so far:
+**`upgrade`**.
+
+```sh
+./container.sh upgrade --help
+```
+
+## upgrade
+
 
 Upgrade a containerised service to a new version with a consistent snapshot of
 its data taken first, and an automatic rollback — of the image **and** the data
@@ -12,18 +22,18 @@ its data taken first, and an automatic rollback — of the image **and** the dat
 ## Get it
 
 ```sh
-./ops-get upgrade.sh v4.4.0
+./ops-get container.sh v4.4.0
 ```
 
 ## Use it
 
 ```sh
-sudo ./upgrade.sh --compose /opt/app/compose.yml --service app --to 2.4.0 \
+sudo ./container.sh upgrade --compose /opt/app/compose.yml --service app --to 2.4.0 \
   --version-var APP_VERSION --env-file /etc/app/app.env \
   --data /data --health-url http://127.0.0.1:8080/healthz
 
 # PocketBase, with its defaults filled in:
-sudo ./upgrade.sh --app pocketbase --compose /opt/pb/compose.yml --service pocketbase \
+sudo ./container.sh upgrade --app pocketbase --compose /opt/pb/compose.yml --service pocketbase \
   --to 0.40.4 --env-file /etc/pb/pb.env --credentials-file /etc/pb/pb.env --build
 ```
 
