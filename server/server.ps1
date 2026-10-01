@@ -152,7 +152,11 @@ if ($Help) { Show-Usage; exit 0 }
 
 $All = @('temp', 'update-downloads', 'delivery-optimization', 'crash-dumps', 'error-reports', 'thumbnails')
 $OptIn = @('components', 'recycle-bin', 'package-caches')
-function Split-List($l) { @($l | ForEach-Object { $_ -split ',' } | Where-Object { $_ } | ForEach-Object { $_.Trim().ToLower() }) }
+# Returned with the comma operator: an empty array is otherwise unrolled to
+# $null, and `$Only + $null` gains a null element - "unknown category ''". As
+# a script of its own, the typed parameter turned $null back into an empty
+# array and hid it; as an action in a scriptblock, nothing does.
+function Split-List($l) { return ,@($l | ForEach-Object { $_ -split ',' } | Where-Object { $_ } | ForEach-Object { $_.Trim().ToLower() }) }
 $Only = Split-List $Only; $Skip = Split-List $Skip; $Include = Split-List $Include
 foreach ($c in $Only + $Skip + $Include) {
   if (($All + $OptIn) -notcontains $c) { Stop-Cleanup "unknown category '$c'. Categories: $($All -join ', '); opt-in: $($OptIn -join ', ')" }
