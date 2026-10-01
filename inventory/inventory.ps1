@@ -43,7 +43,10 @@
 #
 # Windows PowerShell 5.1 and PowerShell 7. Plain ASCII on purpose: 5.1 reads a
 # script without a byte-order mark as Windows-1252.
-[CmdletBinding()]
+# PositionalBinding off: a stray argument is an error, not a value for some
+# other parameter. Through `powershell -File`, `-Only a,b` arrives as two
+# arguments, and the second used to land silently in the next parameter.
+[CmdletBinding(PositionalBinding = $false)]
 param(
   [switch] $Wide,
   [string] $Format = 'table',

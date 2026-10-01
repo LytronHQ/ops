@@ -99,7 +99,11 @@ try {
   # ONE object, where PowerShell 7 enumerates it.
   $j = @(($r.Out -join "`n") | ConvertFrom-Json | ForEach-Object { $_ })
   if ($j.Count -ne 2 -or @($j[0].PSObject.Properties).Count -ne 10) { Fail "json: $($r.Out -join ' ')" }
-  if (@(Get-Tsv -NoCache -Pm choco,scoop | Where-Object { $_.pm -notin 'choco', 'scoop' }).Count) { Fail '-Pm let others through' }
+  # One string: through -File a PowerShell array arrives as separate arguments,
+  # and this check once passed vacuously with the second landing in -Search.
+  $picked = @(Get-Tsv -NoCache -Pm 'choco,scoop')
+  if ($picked.Count -ne 3) { Fail "-Pm choco,scoop should give git, git.install and ripgrep: $($picked.Count) rows" }
+  if (@($picked | Where-Object { $_.pm -notin 'choco', 'scoop' }).Count) { Fail '-Pm let others through' }
   if ((@(Get-Tsv -NoCache -Search 'VERSION CONTROL') | ForEach-Object { $_.name }) -join ',' -ne 'git') { Fail '-Search should match summaries, any case' }
   if (Find @(Get-Tsv -NoCache -Explicit) 'git.install') { Fail '-Explicit let a dependency through' }
 
@@ -138,6 +142,8 @@ try {
   if (Test-Path $partial) { Fail 'an incomplete list was saved' }
 
   'bad input'
+  $r = Invoke-Inventory -NoCache -Pm choco scoop
+  if ($r.Code -eq 0) { Fail 'a stray argument was bound to some other parameter instead of failing' }
   $r = Invoke-Inventory -NoCache -Format html
   if ($r.Code -eq 0 -or $r.Err -notlike "*-Format 'html'*") { Fail "-Format html: $($r.Err)" }
   $r = Invoke-Inventory -NoCache -Pm apt

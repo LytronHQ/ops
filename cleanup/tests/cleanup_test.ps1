@@ -77,7 +77,8 @@ try {
 
   'a file in use is left, counted, and not a failure'
   $lock = [IO.File]::Open("$temp\locked.tmp", 'Open', 'ReadWrite', 'None')
-  $r = Invoke-Cleanup -Apply -Only temp,crash-dumps,error-reports,thumbnails -Format tsv
+  # One string: through -File a PowerShell array arrives as separate arguments.
+  $r = Invoke-Cleanup -Apply -Only 'temp,crash-dumps,error-reports,thumbnails' -Format tsv
   if ($r.Code -ne 0) { Fail "apply failed ($($r.Code)): $($r.Err)" }
   if (-not (Test-Path -LiteralPath "$temp\locked.tmp")) { Fail 'a locked file was removed?' }
   if ((Get-Row $r 'temp')[3] -notlike '*1 in use, left*') { Fail "the locked file was not reported: $(Get-Row $r 'temp')" }
@@ -95,7 +96,7 @@ try {
   if (Test-Path -LiteralPath "$temp\fresh.tmp") { Fail '-OlderThan 0 kept a fresh file' }
 
   'formats and choices'
-  $r = Invoke-Cleanup -Format json -Only thumbnails,temp
+  $r = Invoke-Cleanup -Format json -Only 'thumbnails,temp'
   $j = ($r.Out -join "`n") | ConvertFrom-Json
   if ($j.applied -ne $false -or @($j.categories).Count -ne 2) { Fail "json: $($r.Out -join ' ')" }
   $r = Invoke-Cleanup -Format tsv -Skip temp
@@ -105,6 +106,8 @@ try {
   if ($r.Err -notlike '*nothing was deleted*') { Fail 'the report did not say it deleted nothing' }
 
   'bad input'
+  $r = Invoke-Cleanup -Only temp crash-dumps
+  if ($r.Code -eq 0) { Fail 'a stray argument was bound to some other parameter instead of failing' }
   $r = Invoke-Cleanup -Only tmp
   if ($r.Code -eq 0 -or $r.Err -notlike "*unknown category 'tmp'*") { Fail "-Only tmp: $($r.Err)" }
   $r = Invoke-Cleanup -Format html
