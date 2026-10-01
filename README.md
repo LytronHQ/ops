@@ -29,12 +29,12 @@ A fresh server has `curl` and little else. `ops-get` fetches one script from a
 pinned release and verifies it before it ever runs.
 
 ```sh
-curl -fsSL https://github.com/LytronHQ/ops/releases/download/v4.2.0/ops-get -o ops-get
+curl -fsSL https://github.com/LytronHQ/ops/releases/download/v4.3.0/ops-get -o ops-get
 echo "841b8f34d7d4481f966f1026e935c770291d2f82cac13eebd7cf1c0944f63081  ops-get" | sha256sum -c
 chmod +x ops-get
 
-./ops-get --list v4.2.0                    # what this version has
-./ops-get harden.sh v4.2.0 /tmp/harden.sh
+./ops-get --list v4.3.0                    # what this version has
+./ops-get harden.sh v4.3.0 /tmp/harden.sh
 sudo /tmp/harden.sh
 ```
 
@@ -48,11 +48,11 @@ Windows has, or PowerShell 7:
 
 ```powershell
 [Net.ServicePointManager]::SecurityProtocol = 'Tls12'   # Windows PowerShell 5.1 needs this for GitHub
-Invoke-WebRequest https://github.com/LytronHQ/ops/releases/download/v4.2.0/ops-get.ps1 -OutFile ops-get.ps1 -UseBasicParsing
-if ((Get-FileHash .\ops-get.ps1).Hash -ne 'D5ECE2C6630D7258CE03074201CA47F5534C071649DABB380C260C2F137C44F4') { throw 'ops-get.ps1 does not match' }
+Invoke-WebRequest https://github.com/LytronHQ/ops/releases/download/v4.3.0/ops-get.ps1 -OutFile ops-get.ps1 -UseBasicParsing
+if ((Get-FileHash .\ops-get.ps1).Hash -ne '922D98A16DE563C299DBF8D3692B193215ED566FABA1B024639C09876F43DE9B') { throw 'ops-get.ps1 does not match' }
 
-powershell -ExecutionPolicy Bypass -File .\ops-get.ps1 -List v4.2.0
-powershell -ExecutionPolicy Bypass -File .\ops-get.ps1 inventory.ps1 v4.2.0
+powershell -ExecutionPolicy Bypass -File .\ops-get.ps1 -List v4.3.0
+powershell -ExecutionPolicy Bypass -File .\ops-get.ps1 inventory.ps1 v4.3.0
 ```
 
 `-ExecutionPolicy Bypass` because Windows blocks unsigned downloaded scripts by
@@ -70,17 +70,17 @@ ops-get --list <version>
 | Argument | Required | Meaning |
 |---|---|---|
 | `<script>` | yes | the asset filename, e.g. `harden.sh`. No path — release assets are flat |
-| `<version>` | yes | a release tag, e.g. `v4.2.0`. There is deliberately no "latest" |
+| `<version>` | yes | a release tag, e.g. `v4.3.0`. There is deliberately no "latest" |
 | `[destination]` | no | where to write it. Default: `./<script>` |
 
 | Flag | Default | Meaning |
 |---|---|---|
-| `--list <version>` | | print the scripts in that version — the ones its `SHA256SUMS` vouches for. A script that does not run on this machine is still listed, marked `unsupported on <platform> (runs on: …)`, from the release's `MANIFEST`. Releases before v4.2.0 have no `MANIFEST`, and nothing is marked |
+| `--list <version>` | | print the scripts in that version — the ones its `SHA256SUMS` vouches for. A script that does not run on this machine is still listed, marked `unsupported on <platform> (runs on: …)`, from the release's `MANIFEST`. Releases before v4.3.0 have no `MANIFEST`, and nothing is marked |
 | `--repo <owner/name>` | `LytronHQ/ops` | whose releases to fetch from — point it at your fork |
 | `--base-url <url>` | GitHub releases | the whole release URL, for a mirror or an air-gapped copy |
 | `-h`, `--help` | | print usage; so does running it with no arguments |
 
-Nothing is read from the environment. Before v4.2.0 the last two were the
+Nothing is read from the environment. Before v4.3.0 the last two were the
 `OPS_REPO` and `OPS_BASE_URL` variables; they are no longer read.
 
 Needs `curl` or `wget`, plus `sha256sum` or `shasum`. It is POSIX `sh`, because
