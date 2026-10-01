@@ -18,13 +18,13 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-SCRIPT="$HERE/../access.sh"
+SCRIPT="$HERE/../edge.sh"
 STATE="$(mktemp -d)"
 trap 'rm -rf "$STATE"; [ -n "${STUB_PID:-}" ] && kill "$STUB_PID" 2>/dev/null || true' EXIT
 
 PORT="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')"
 printf 'stub-api-token\n' > "$STATE/api-token"
-python3 "$HERE/cloudflare_api_stub.py" "$PORT" "$STATE" stub-api-token &
+python3 "$HERE/cloudflare_access_stub.py" "$PORT" "$STATE" stub-api-token &
 STUB_PID=$!
 for _ in $(seq 1 50); do
   curl -fsS "http://127.0.0.1:${PORT}/health" >/dev/null 2>&1 && break
@@ -32,7 +32,7 @@ for _ in $(seq 1 50); do
 done
 
 run() { # extra flags as args; stdout only
-  bash "$SCRIPT" --api-base "http://127.0.0.1:${PORT}" --api-token-file "$STATE/api-token" \
+  bash "$SCRIPT" access --api-base "http://127.0.0.1:${PORT}" --api-token-file "$STATE/api-token" \
     --account-id acct --hostname api.test.local "$@" 2>/dev/null
 }
 
@@ -116,7 +116,7 @@ echo "== bad input is refused before any API call =="
 # (correct) non-zero exit as a failed match.
 bad() { # expected-message flags… — must fail before any API call
   local want="$1" out; shift
-  out="$(bash "$SCRIPT" --api-base "http://127.0.0.1:1" "$@" 2>&1 </dev/null)" && fail "accepted: $*"
+  out="$(bash "$SCRIPT" access --api-base "http://127.0.0.1:1" "$@" 2>&1 </dev/null)" && fail "accepted: $*"
   grep -q -- "$want" <<<"$out" || fail "$*: expected '$want', got: $out"
 }
 base=(--hostname x --account-id x --api-token-file "$STATE/api-token")
@@ -132,10 +132,10 @@ bad "is empty"                        --hostname x --account-id x --api-token-fi
 
 echo "== the API token comes from the file, and a wrong one is rejected =="
 printf 'wrong-token' > "$STATE/wrong-token"
-bash "$SCRIPT" --api-base "http://127.0.0.1:${PORT}" --api-token-file "$STATE/wrong-token" \
+bash "$SCRIPT" access --api-base "http://127.0.0.1:${PORT}" --api-token-file "$STATE/wrong-token" \
   --account-id acct --hostname api.test.local --token ci >/dev/null 2>&1 \
   && fail "a wrong API token was accepted — is the token being sent?"
-out="$(printf 'stub-api-token' | bash "$SCRIPT" --api-base "http://127.0.0.1:${PORT}" \
+out="$(printf 'stub-api-token' | bash "$SCRIPT" access --api-base "http://127.0.0.1:${PORT}" \
   --api-token-file - --account-id acct --hostname api.test.local --token ci 2>/dev/null)" \
   || fail "--api-token-file - (stdin) did not work"
 grep -q '^CF_ACCESS_CLIENT_ID_CI=' <<<"$out" || fail "stdin run printed no client id"
