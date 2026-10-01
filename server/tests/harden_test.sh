@@ -69,9 +69,11 @@ echo "== a new key login still works =="
 who="$(ssh -i "$K/id" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
   -o BatchMode=yes -o ConnectTimeout=10 -o LogLevel=ERROR "$U@127.0.0.1" whoami 2>&1)" || fail "SSH login failed after hardening: $who"
 [ "$who" = "$U" ] || fail "logged in as '$who'"
-ssh -o PubkeyAuthentication=no -o PreferredAuthentications=password -o BatchMode=yes -o StrictHostKeyChecking=no \
-  -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 "$U@127.0.0.1" true 2>&1 | grep -q 'Permission denied (publickey)' \
-  || fail "the server still offers password login"
+# Which methods sshd offers, from its refusal: only publickey once hardened.
+offered="$(ssh -o PubkeyAuthentication=no -o PreferredAuthentications=password,keyboard-interactive -o BatchMode=yes \
+  -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=10 \
+  "$U@127.0.0.1" true 2>&1 || true)"
+grep -q 'Permission denied (publickey)' <<<"$offered" || fail "the server still offers more than keys: $offered"
 
 echo "== again: nothing changes =="
 cp /etc/ssh/sshd_config.d/10-hardening.conf "$K/before.conf"; ufw status > "$K/before.ufw"
