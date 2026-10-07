@@ -28,27 +28,15 @@ releasing); read the relevant one before changing something.
   CI does: `sudo env OPS_TEST_DISPOSABLE=1 bash server/tests/harden_test.sh`.
 
 ## GitHub workflow
-- For every feature, bug, or problem, create a GitHub issue first.
-- Create a branch and a PR that closes the issue. Never commit or push to
-  `main` directly (an org ruleset enforces this). When the work is done, tests
-  pass and CI is green, merge the PR yourself.
+- Issue → branch → PR → merge yourself, owner tasks, GPG signing, English on
+  GitHub and the accuracy rule for owner-issue steps: see the global
+  `~/.claude/CLAUDE.md`. What this repo adds:
+- Never commit or push to `main` directly (an org ruleset enforces this).
+  Merge only when tests pass and CI is green.
 - The PR says what changed, why, how it was verified (commands and output),
   and what was not verified.
-- If a task must be done by the repo owner (a GitHub or Cloudflare setting,
-  anything that cannot be done in code), create an issue, assign it to the
-  owner, label it `needs-owner`, and do not try to do it yourself.
-- Commits are GPG-signed; never disable signing.
 - No AI attribution anywhere: no Co-Authored-By trailer, no "Generated with"
   footer, in commits, PRs, issues or release notes.
-- Everything in the repo and on GitHub is in English. Conversation with the
-  owner may be in Persian.
-
-## Writing owner issues — accuracy rule (IMPORTANT)
-- Never invent UI steps for an external service (GitHub, Cloudflare,
-  Bitwarden, etc.). Before writing step-by-step instructions, read the
-  official current docs for that exact service and base the steps on them.
-- If a step cannot be verified from the docs, say plainly: "Could not verify
-  this step — please check," and link the relevant docs page.
 
 ## Repo rules that have cost a bug or a near-miss
 - Every input is a flag, never an environment variable. Secrets come in via a
