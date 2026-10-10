@@ -7,7 +7,13 @@ re-implementation. State lives in JSON files so the test can inspect what was
 created and tamper with it.
 
 Creating a service token whose name contains "fail" returns an API error, so
-the test can make a run die after it has already minted something.
+the test can make a run die after it has already minted something. Updating a
+policy whose name contains "fail" does the same, one step later.
+
+A policy stored with "reusable": true behaves like Cloudflare's reusable
+policies: the application's policy list still shows it (flagged), but a PUT
+through the application endpoint is refused with error 12130 — it can only be
+updated at /accounts/{id}/access/policies/{id}.
 """
 import json
 import os
@@ -42,8 +48,8 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
 
-    def _send(self, result, success=True):
-        errors = [] if success else [{"code": 1000, "message": "stub: refused"}]
+    def _send(self, result, success=True, errors=None):
+        errors = errors or ([] if success else [{"code": 1000, "message": "stub: refused"}])
         body = json.dumps({"success": success, "errors": errors, "result": result}).encode()
         self.send_response(200 if success else 400)
         self.send_header("Content-Type", "application/json")
@@ -124,7 +130,23 @@ class Handler(BaseHTTPRequestHandler):
         if "/policies/" in self.path:
             pid = self.path.rsplit("/", 1)[1]
             policies = load("policies")
-            policies[pid] = {"id": pid, "app": self._app_id(self.path), **body}
+            if "fail" in body.get("name", ""):
+                return self._send(None, success=False)
+            old = policies.get(pid, {})
+            if "/access/apps/" in self.path:
+                if old.get("reusable"):
+                    return self._send(None, success=False, errors=[{
+                        "code": 12130,
+                        "message": "access.api.error.invalid_request: can not update reusable policies through this endpoint"}])
+                app = self._app_id(self.path)
+            else:
+                # The account-level endpoint: reusable policies only.
+                if not old.get("reusable"):
+                    return self._send(None, success=False)
+                app = old["app"]
+            policies[pid] = {**{k: old[k] for k in ("reusable",) if k in old},
+                             "id": pid, "app": app, **body}
+            policies[pid]["updated_via"] = "account" if "/access/apps/" not in self.path else "app"
             save("policies", policies)
             return self._send(policies[pid])
         return self._send({})
