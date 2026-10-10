@@ -47,6 +47,15 @@ maintain, in this order — and the order is load-bearing:
      silent failure looks like no failure on a host nobody watches; the monitor
      alerts on the ping's absence instead.
 
+With --app pocketbase, steps 1 and 2 do NOT open the database from outside.
+A PocketBase backup closes descriptors to data.db-shm/-wal, which releases the
+server's POSIX locks on them; the next outside process to open the database
+then thinks it is the last connection and deletes the WAL and -shm the server
+still has open — writes vanish and queries start failing (#89). So the WAL is
+folded in by PocketBase itself, through its __pbDBOptimize__ cron job
+(wal_checkpoint(TRUNCATE) + optimize), and the bounded vacuum, which can only
+run from outside, is skipped and said so. --db and --container are not needed.
+
 Deliberately absent: a recurring full VACUUM, and backup retention — the
 backup destination's own lifecycle prunes it, and two policies on one bucket
 is how backups get deleted early.
@@ -63,13 +72,14 @@ Options — every input is one; nothing is read from the environment:
   --app <name>               the application, for its backup: pocketbase
   --url <url>                pocketbase: base URL (default http://127.0.0.1:8090)
   --credentials-file <file>  pocketbase: PB_SUPERUSER_EMAIL / _PASSWORD lines
+                             (required with --app pocketbase)
   --backup-prefix <name>     pocketbase: backup name prefix (default backup)
   --no-backup                skip the backup
   --heartbeat-url-file <f>   file holding the heartbeat URL. A file, not a
                              value: anyone holding the URL can fake the ping
   -h, --help                 this text
 
-Needs bash, curl, and sqlite3 on the host or in the container.
+Needs bash and curl; without --app, also sqlite3 on the host or in the container.
 HELP_END
 }
 
@@ -107,15 +117,57 @@ case "$ENGINE" in sqlite) ;; *) die "--engine '$ENGINE' is not implemented. Impl
 case "$APP" in "") [ -z "$CREDS$URL" ] || die "--url and --credentials-file need --app" ;;
   pocketbase) URL="${URL:-http://127.0.0.1:8090}" ;;
   *) die "--app '$APP': known applications are pocketbase" ;; esac
-[ -n "$DB" ] || die "--db is required"
+[ -n "$DB" ] || [ "$APP" = pocketbase ] || die "--db is required"
 [[ "$PAGES" =~ ^[0-9]+$ ]] || die "--vacuum-pages must be a number"
 [[ "$BUSY" =~ ^[0-9]+$ ]] || die "--busy-ms must be a number"
 [[ "$PREFIX" =~ ^[A-Za-z0-9._-]+$ ]] || die "--backup-prefix '$PREFIX': letters, digits, . _ -"
-if [ "$APP" = pocketbase ] && [ "$BACKUP" = 1 ]; then
-  [ -n "$CREDS" ] || die "--app pocketbase backs up through its API, which needs --credentials-file (or --no-backup)"
+if [ "$APP" = pocketbase ]; then
+  # Not only for the backup: the checkpoint goes through the API too (#89).
+  [ -n "$CREDS" ] || die "--app pocketbase works through its API (checkpoint and backup), which needs --credentials-file"
   [ -r "$CREDS" ] || die "--credentials-file: cannot read $CREDS"
 fi
 if [ -n "$HB" ]; then [ -r "$HB" ] || die "--heartbeat-url-file: cannot read $HB"; fi
+
+read_env() { sed -n "s/^[[:space:]]*\(export[[:space:]]\{1,\}\)\{0,1\}$2=//p" "$1" | tail -1 | sed "s/^[\"']//; s/[\"']$//"; }
+json_str() {
+  local s="$1"
+  s="${s//\\/\\\\}"; s="${s//\"/\\\"}"; s="${s//$'\n'/\\n}"; s="${s//$'\r'/\\r}"; s="${s//$'\t'/\\t}"
+  printf '"%s"' "$s"
+}
+# pb_login -> token on stdout, or dies. The password on stdin and JSON-escaped;
+# printf-built JSON on the command line broke on a quote and showed in ps.
+pb_login() {
+  command -v curl >/dev/null 2>&1 || die "curl not found"
+  local email pw token
+  email="$(read_env "$CREDS" PB_SUPERUSER_EMAIL)"; pw="$(read_env "$CREDS" PB_SUPERUSER_PASSWORD)"
+  [ -n "$email" ] && [ -n "$pw" ] || die "no PB_SUPERUSER_EMAIL / PB_SUPERUSER_PASSWORD in $CREDS"
+  token="$(printf '{"identity":%s,"password":%s}' "$(json_str "$email")" "$(json_str "$pw")" |
+    curl -fsS --max-time 30 "${URL%/}/api/collections/_superusers/auth-with-password" \
+      -H 'Content-Type: application/json' --data-binary @- 2>/dev/null |
+    sed -n 's/.*"token":"\([^"]*\)".*/\1/p')" || true
+  [ -n "$token" ] || die "superuser login to ${URL%/} failed; nothing was done"
+  printf '%s' "$token"
+}
+
+if [ "$APP" = pocketbase ]; then
+token="$(pb_login)"
+
+# --- 1. checkpoint, in-process ---------------------------------------------------------
+# PocketBase's own __pbDBOptimize__ job: wal_checkpoint(TRUNCATE) + optimize,
+# run by the server on its own connections. Never sqlite3 from outside: see
+# the help text (#89) for how that deleted a live WAL.
+log "checkpoint: asking PocketBase to fold its WAL in (__pbDBOptimize__)"
+code="$(curl -sS --max-time 120 -o /dev/null -w '%{http_code}' -X POST "${URL%/}/api/crons/__pbDBOptimize__" \
+  -H @<(printf 'Authorization: %s\n' "$token") || echo 000)"
+case "$code" in
+  200|204) log "  done" ;;
+  *) die "PocketBase's checkpoint job returned HTTP $code" ;;
+esac
+
+# --- 2. vacuum: not from outside --------------------------------------------------------
+log "vacuum: SKIPPED for PocketBase — it can only run from outside the server, which"
+log "  is what deletes a live WAL after a backup (#89)."
+else
 
 if [ -n "$CONTAINER" ]; then
   command -v docker >/dev/null 2>&1 || die "docker not found"
@@ -148,25 +200,11 @@ else
   log "vacuum: SKIPPED — auto_vacuum is ${mode:-unknown}, not INCREMENTAL (2). Converting needs a"
   log "  full VACUUM, which rewrites the file under an exclusive lock: a maintenance-window job."
 fi
+fi
 
 # --- 3. backup -------------------------------------------------------------------------
-read_env() { sed -n "s/^[[:space:]]*\(export[[:space:]]\{1,\}\)\{0,1\}$2=//p" "$1" | tail -1 | sed "s/^[\"']//; s/[\"']$//"; }
-json_str() {
-  local s="$1"
-  s="${s//\\/\\\\}"; s="${s//\"/\\\"}"; s="${s//$'\n'/\\n}"; s="${s//$'\r'/\\r}"; s="${s//$'\t'/\\t}"
-  printf '"%s"' "$s"
-}
 if [ "$APP" = pocketbase ] && [ "$BACKUP" = 1 ]; then
-  command -v curl >/dev/null 2>&1 || die "curl not found"
-  email="$(read_env "$CREDS" PB_SUPERUSER_EMAIL)"; pw="$(read_env "$CREDS" PB_SUPERUSER_PASSWORD)"
-  [ -n "$email" ] && [ -n "$pw" ] || die "no PB_SUPERUSER_EMAIL / PB_SUPERUSER_PASSWORD in $CREDS"
-  # The password on stdin and JSON-escaped; the token through a file descriptor.
-  # printf-built JSON on the command line broke on a quote and showed in ps.
-  token="$(printf '{"identity":%s,"password":%s}' "$(json_str "$email")" "$(json_str "$pw")" |
-    curl -fsS --max-time 30 "${URL%/}/api/collections/_superusers/auth-with-password" \
-      -H 'Content-Type: application/json' --data-binary @- 2>/dev/null |
-    sed -n 's/.*"token":"\([^"]*\)".*/\1/p')" || true
-  [ -n "$token" ] || die "superuser login to ${URL%/} failed; no backup was taken"
+  # The token from the login above, through a file descriptor.
   name="$PREFIX-$(date -u +%Y%m%d-%H%M%S).zip"
   log "backup: requesting $name"
   out="$(mktemp)"; trap 'rm -f "$out"' EXIT

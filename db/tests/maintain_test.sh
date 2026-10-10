@@ -8,7 +8,9 @@
 #   1. the WAL is folded in, the vacuum is bounded to --vacuum-pages, data intact
 #   2. a database not in incremental mode is skipped and said so, not converted
 #   3. a reader blocking the checkpoint is a warning, not a failure
-#   4. ORDER: when the backup is requested, the vacuum has already run
+#   4. with --app pocketbase the database is NEVER opened from outside (no
+#      sqlite3 at all): the WAL is folded in by PocketBase's own __pbDBOptimize__
+#      job, requested BEFORE the backup (#89)
 #   5. login with a quoted password, JSON-escaped; password, token and heartbeat
 #      URL never in curl's arguments
 #   6. the heartbeat only after everything worked: not after a failed backup or
@@ -35,6 +37,8 @@ free() { sqlite3 "$1" '.dbconfig no_ckpt_on_close on' 'PRAGMA freelist_count;' |
 mkdir -p "$W/bin"
 printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> "%s/curl.argv"\nexec %s "$@"\n' "$W" "$(command -v curl)" > "$W/bin/curl"
 chmod +x "$W/bin/curl"
+printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> "%s/sqlite3.argv"\nexec %s "$@"\n' "$W" "$(command -v sqlite3)" > "$W/bin/sqlite3"
+chmod +x "$W/bin/sqlite3"
 run() { PATH="$W/bin:$PATH" bash "$SCRIPT" maintain "$@" 2>"$W/log"; }
 
 echo "== WAL folded in, vacuum bounded, data intact =="
@@ -88,11 +92,14 @@ class H(BaseHTTPRequestHandler):
         if self.path.endswith("/auth-with-password"):
             ok = body == {"identity": "admin@example.com", "password": 'p"ss \\ w0rd!'}
             return self.reply(200 if ok else 400, b'{"token":"tok-xyz"}' if ok else b"{}")
+        if self.path == "/api/crons/__pbDBOptimize__":
+            if self.headers.get("Authorization") != "tok-xyz": return self.reply(401)
+            open(w + "/order", "a").write("optimize\n")
+            return self.reply(204, b"")
         if self.path == "/api/backups":
             if self.headers.get("Authorization") != "tok-xyz": return self.reply(401)
-            db = sqlite3.connect(w + "/p.db")
-            free = db.execute("PRAGMA freelist_count").fetchone()[0]
-            open(w + "/backups", "a").write(f"{body['name']} free={free}\n")
+            open(w + "/order", "a").write("backup\n")
+            open(w + "/backups", "a").write(f"{body['name']}\n")
             return self.reply(500 if body["name"].startswith("fail") else 204)
         self.reply(404)
 HTTPServer(("127.0.0.1", port), H).serve_forever()
@@ -103,10 +110,14 @@ printf 'PB_SUPERUSER_EMAIL=admin@example.com\nPB_SUPERUSER_PASSWORD=p"ss \\ w0rd
 printf 'http://127.0.0.1:%s/beat/secret-heartbeat-token\n' "$PORT" > "$W/hb"
 pb() { run --db "$W/p.db" --app pocketbase --url "http://127.0.0.1:$PORT" --credentials-file "$W/creds" --heartbeat-url-file "$W/hb" "$@"; }
 
-echo "== backup after the vacuum, then the heartbeat =="
-make_db "$W/p.db" INCREMENTAL; f0="$(free "$W/p.db")"; : > "$W/curl.argv"; rm -f "$W/beats" "$W/backups"
+echo "== pocketbase: never opened from outside; checkpoint in-process, then backup, then heartbeat =="
+make_db "$W/p.db" INCREMENTAL; f0="$(free "$W/p.db")"; : > "$W/curl.argv"; rm -f "$W/beats" "$W/backups" "$W/order" "$W/sqlite3.argv"
 pb --vacuum-pages 50 || fail "maintain with a backup failed: $(cat "$W/log")"
-grep -qE "^backup-[0-9]{8}-[0-9]{6}\.zip free=$((f0 - 50))$" "$W/backups" || fail "the backup should be requested AFTER the vacuum: $(cat "$W/backups") (free was $f0)"
+[ ! -s "$W/sqlite3.argv" ] || fail "sqlite3 was run against a live PocketBase database (#89): $(cat "$W/sqlite3.argv")"
+[ "$(free "$W/p.db")" = "$f0" ] || fail "the database file was changed from outside"
+[ "$(tr '\n' ' ' < "$W/order")" = "optimize backup " ] || fail "want the in-process checkpoint, then the backup; got: $(cat "$W/order")"
+grep -qE "^backup-[0-9]{8}-[0-9]{6}\.zip$" "$W/backups" || fail "no backup requested: $(cat "$W/backups")"
+grep -q "vacuum: SKIPPED for PocketBase" "$W/log" || fail "the skipped vacuum was not said: $(cat "$W/log")"
 [ "$(wc -l < "$W/beats")" = 1 ] || fail "the heartbeat was not sent once"
 for secret in 'w0rd' 'tok-xyz' 'secret-heartbeat-token'; do
   grep -q "$secret" "$W/curl.argv" && fail "'$secret' appeared in curl's arguments"
@@ -121,8 +132,10 @@ printf 'PB_SUPERUSER_EMAIL=admin@example.com\nPB_SUPERUSER_PASSWORD=wrong\n' > "
 pb && fail "a failed login did not fail the run"
 [ ! -e "$W/beats" ] || fail "a heartbeat was sent after a failed login"
 
-echo "== --no-backup still beats =="
+echo "== --no-backup still checkpoints and beats =="
+printf 'PB_SUPERUSER_EMAIL=admin@example.com\nPB_SUPERUSER_PASSWORD=p"ss \\ w0rd!\n' > "$W/creds"; rm -f "$W/order"
 pb --no-backup || fail "--no-backup: $(cat "$W/log")"
+[ "$(tr '\n' ' ' < "$W/order")" = "optimize " ] || fail "--no-backup should still checkpoint, and not back up: $(cat "$W/order")"
 [ "$(wc -l < "$W/beats")" = 1 ] || fail "no heartbeat with --no-backup"
 
 echo "== bad input =="
@@ -131,6 +144,7 @@ bad "unknown action 'vacuum'"        vacuum --db "$W/a.db"
 bad "--db is required"                 maintain
 bad "--engine 'postgres' is not"      maintain --engine postgres --db x
 bad "needs --credentials-file"         maintain --db "$W/a.db" --app pocketbase
+bad "needs --credentials-file"         maintain --app pocketbase --no-backup
 bad "need --app"                       maintain --db "$W/a.db" --credentials-file "$W/creds"
 bad "no such file"                     maintain --db "$W/nope.db"
 
