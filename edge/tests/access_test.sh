@@ -13,6 +13,10 @@
 #   4. rotation is scoped to the tokens named
 #   5. a run that dies after minting still prints what it minted
 #   6. an extra policy on the application is refused
+#   9. a REUSABLE policy is updated at the account-level endpoint (the app
+#      endpoint refuses it), keeping its tokens
+#  10. a failure in a call whose stdout is redirected still hands the minted
+#      secret to the caller
 #   7. bad input is refused before any API call
 #   8. the API token is read from --api-token-file (a file or stdin) and sent
 set -euo pipefail
@@ -139,6 +143,60 @@ out="$(printf 'stub-api-token' | bash "$SCRIPT" access --api-base "http://127.0.
   --api-token-file - --account-id acct --hostname api.test.local --token ci 2>/dev/null)" \
   || fail "--api-token-file - (stdin) did not work"
 grep -q '^CF_ACCESS_CLIENT_ID_CI=' <<<"$out" || fail "stdin run printed no client id"
+
+echo "== a reusable policy is updated where Cloudflare allows it =="
+# Cloudflare lists a reusable policy under the application but refuses a PUT
+# there (error 12130); it has to go to /access/policies/{id}. The stub does the
+# same, so a script that only knows the app endpoint fails here.
+python3 - "$STATE" <<'PY'
+import json, sys
+path = sys.argv[1] + '/policies.json'
+ps = json.load(open(path))
+for p in ps.values():
+    p['reusable'] = True
+json.dump(ps, open(path, 'w'))
+PY
+before="$(policy_ids)"
+out="$(run --token ci --token reusable-new)" || fail "a run against a reusable policy failed"
+grep -q '^CF_ACCESS_CLIENT_SECRET_REUSABLE_NEW=' <<<"$out" || fail "no secret for the token minted against a reusable policy"
+python3 - "$STATE" "$(token_id reusable-new)" "$before" <<'PY' || fail "the reusable policy was not updated in place, with every token"
+import json, sys
+ps = list(json.load(open(sys.argv[1] + '/policies.json')).values())
+assert len(ps) == 1, ps
+p = ps[0]
+assert p.get('reusable') is True, p
+assert p.get('updated_via') == 'account', p.get('updated_via')
+ids = {i['service_token']['token_id'] for i in p['include']}
+assert sys.argv[2] in ids, (sys.argv[2], ids)
+assert set(sys.argv[3].split()) <= ids, ('a token was dropped', sys.argv[3], ids)
+PY
+
+echo "== a failure inside a redirected call still prints the minted secret =="
+# The policy update runs as `cf ... >/dev/null`. Dying in there used to run the
+# EXIT trap with that redirection still active, so "printing it anyway" printed
+# into /dev/null and the only copy of the secret was gone.
+python3 - "$STATE" <<'PY'
+import json, sys
+path = sys.argv[1] + '/policies.json'
+ps = json.load(open(path))
+for p in ps.values():
+    p['name'] = 'fail-on-update'
+json.dump(ps, open(path, 'w'))
+PY
+set +e
+out="$(run --policy-name fail-on-update --token ci --token minted-then-lost)"; rc=$?
+set -e
+[ "$rc" != "0" ] || fail "a failed policy update did not fail the run"
+grep -q '^CF_ACCESS_CLIENT_SECRET_MINTED_THEN_LOST=' <<<"$out" \
+  || fail "the secret minted before the failed policy update did not reach the caller: $out"
+python3 - "$STATE" <<'PY'
+import json, sys
+path = sys.argv[1] + '/policies.json'
+ps = json.load(open(path))
+for p in ps.values():
+    p['name'] = 'service-tokens'
+json.dump(ps, open(path, 'w'))
+PY
 
 echo "== an extra policy is refused =="
 python3 - "$STATE" <<'PY'

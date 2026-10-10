@@ -373,13 +373,19 @@ var_name() { printf '%s' "$1" | tr '[:lower:]' '[:upper:]' | tr -c 'A-Z0-9' '_';
 # So whatever has been minted is printed on ANY exit path. A later failure costs
 # a re-run rather than a credential; the caller stores what it sees, then honours
 # the exit status.
+#
+# To the stdout the script STARTED with, saved here as fd 3 — not to whatever
+# stdout is current when it dies. The policy update is `cf … >/dev/null`; a
+# `die` inside it runs this trap with that redirection still in force, and the
+# secret went into /dev/null while the log said it was being printed (#85).
 OUTPUT="" MINTED=0 EMITTED=0
+exec 3>&1
 on_exit() {
   local rc=$?
   if [ "$EMITTED" = "0" ] && [ "$MINTED" = "1" ]; then
     log "!! exiting with status $rc AFTER minting a service-token secret."
     log "!! printing it anyway — it cannot be retrieved again."
-    printf '%s' "$OUTPUT"
+    printf '%s' "$OUTPUT" >&3
   fi
 }
 trap on_exit EXIT
@@ -446,6 +452,11 @@ fi
 # "allow" policy would also admit browser identity flows, which is a second door.
 POLICIES="$(cf GET "/accounts/${ACCOUNT_ID}/access/apps/${APP_ID}/policies")"
 POLICY_ID="$(jq -r --arg n "$POLICY_NAME" '.result[] | select(.name==$n) | .id' <<<"$POLICIES" | head -1)"
+# A reusable policy is listed under the application but can only be changed at
+# the account level: Cloudflare refuses the app endpoint for it with error
+# 12130 (#85). A legacy, app-scoped policy is still updated where it lives.
+POLICY_REUSABLE="$(jq -r --arg n "$POLICY_NAME" \
+  '[.result[] | select(.name==$n)][0].reusable // false' <<<"$POLICIES")"
 
 # Every token in ONE policy: include entries are ORed, so this admits any of
 # them and nothing else, and revoking one leaves the rest working. The tokens
@@ -470,8 +481,13 @@ if [ -z "$POLICY_ID" ]; then
   log "==> creating Service Auth policy $POLICY_NAME"
   cf POST "/accounts/${ACCOUNT_ID}/access/apps/${APP_ID}/policies" "$pbody" >/dev/null
 else
-  log "==> updating Service Auth policy $POLICY_NAME"
-  cf PUT "/accounts/${ACCOUNT_ID}/access/apps/${APP_ID}/policies/${POLICY_ID}" "$pbody" >/dev/null
+  if [ "$POLICY_REUSABLE" = "true" ]; then
+    log "==> updating Service Auth policy $POLICY_NAME (reusable)"
+    cf PUT "/accounts/${ACCOUNT_ID}/access/policies/${POLICY_ID}" "$pbody" >/dev/null
+  else
+    log "==> updating Service Auth policy $POLICY_NAME"
+    cf PUT "/accounts/${ACCOUNT_ID}/access/apps/${APP_ID}/policies/${POLICY_ID}" "$pbody" >/dev/null
+  fi
 fi
 
 # Any other policy on this application is a way in that bypasses the tokens.
