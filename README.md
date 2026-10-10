@@ -11,7 +11,7 @@ action's options.
 |---|---|---|---|
 | [`server/`](server/) — `server.sh`, `server.ps1` | `harden`, `cleanup`, `inventory` | looking after a machine: firewall and SSH, disk space, what is installed. Windows: `cleanup`, `inventory` | the machine itself |
 | [`container/`](container/) — `container.sh` | `upgrade` | a containerised service: upgrade it, snapshot first, roll back image and data on failure | the host running it |
-| [`db/`](db/) — `db.sh` | `maintain` | a SQLite database: checkpoint, bounded vacuum, the app's backup, a heartbeat | the host with the database |
+| [`db/`](db/) — `db.sh` | `maintain` | a SQLite database: checkpoint, bounded vacuum, the app's backup, a heartbeat (PocketBase: in-process only, #89) | the host with the database |
 | [`edge/`](edge/) — `edge.sh` | `tunnel`, `access` | how traffic reaches a service: a tunnel to it, a service-token gate in front of it (Cloudflare) | your machine or CI |
 | [`secrets/`](secrets/) — `secrets.sh` | `env` | an environment's secrets, ready to source (Bitwarden) | your machine or CI |
 | [`vmlab/`](vmlab/) — `vmlab.sh` | `create`, `destroy`, `start`, `stop`, `status`, `ips` | throwaway libvirt VMs without sudo | your own machine |

@@ -20,18 +20,17 @@ worked.
 ```sh
 ./db.sh maintain --db /var/lib/app/app.db
 
-# PocketBase in a container, with its own backup and a heartbeat:
-./db.sh maintain --container pocketbase --db /pb_data/data.db \
-  --app pocketbase --credentials-file /etc/pb/pb.env \
+# PocketBase, with its own backup and a heartbeat — all through its API:
+./db.sh maintain --app pocketbase --credentials-file /etc/pb/pb.env \
   --heartbeat-url-file /etc/pb/heartbeat.url
 ```
 
 ```
-checkpoint: folding the WAL into /pb_data/data.db
-  wal_checkpoint(TRUNCATE) -> 0|0|0 (busy|log|checkpointed)
-vacuum: reclaiming up to 20000 page(s) of 5341 free
-  free pages now 0
-backup: requesting backup-20261001-063429.zip
+checkpoint: asking PocketBase to fold its WAL in (__pbDBOptimize__)
+  done
+vacuum: SKIPPED for PocketBase — it can only run from outside the server, which
+  is what deletes a live WAL after a backup (#89).
+backup: requesting backup-20261010-220227.zip
   backup created (and uploaded, when PocketBase's S3 backups are set up)
 heartbeat sent
 maintenance complete
@@ -54,6 +53,28 @@ The order is load-bearing.
 4. **A heartbeat**, with `--heartbeat-url-file` — only when everything above
    worked. A failure that says nothing looks like no failure on a host nobody
    watches; the monitor alerts on the ping's *absence* instead.
+
+### PocketBase: never from outside
+
+With `--app pocketbase`, steps 1 and 2 do not open the database from outside —
+no `sqlite3` at all. A PocketBase backup closes file descriptors to
+`data.db-shm` and `-wal`, and on Linux closing *any* descriptor to a file
+releases *all* of that process's POSIX locks on it. The server keeps running
+without the lock that tells other processes it is using the database. The next
+outside process to open it — this tool's checkpoint on the following night, or
+a deploy's `sqlite3` — then believes it is the last connection and **deletes
+the WAL and `-shm` the server still has open**. Writes that were only in the WAL
+are lost on the next restart, and queries start failing (#89; it took a
+production database down).
+
+So for PocketBase the WAL is folded in by PocketBase itself, through its own
+`__pbDBOptimize__` cron job (`POST /api/crons/__pbDBOptimize__`:
+`wal_checkpoint(TRUNCATE)` and `optimize`, on the server's own connections),
+and the bounded vacuum — which only exists from outside — is skipped and said
+so. `--db` and `--container` are not needed; `--credentials-file` is.
+
+The same rule holds for anything else: do not run `sqlite3` against a running
+PocketBase's database.
 
 Deliberately absent: a recurring full `VACUUM` — an exclusive lock for its
 whole duration, the whole file rewritten — and backup retention, which the
