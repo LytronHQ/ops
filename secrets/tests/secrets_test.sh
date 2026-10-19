@@ -15,6 +15,9 @@
 #      never in its argv; a wrong one fails
 #   5. BWS_* already in the caller's environment is not used
 #   6. an unreadable project, an empty one, a bad key and bad input all fail
+#   7. a failed read is retried (--attempts, --retry-wait): a transient failure
+#      recovers; a lasting one fails after exactly --attempts tries, and the
+#      message carries bws's whole error, not only its "Error:" first line
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -61,11 +64,12 @@ VARS_ONLY=plain value with = sign
 LOG_LEVEL=info
 VARS
 
-run() { bash "$SCRIPT" env --access-token-file "$W/token" "$@"; }
+# --retry-wait 0: a failing case would otherwise sleep through its retries.
+run() { bash "$SCRIPT" env --retry-wait 0 --access-token-file "$W/token" "$@"; }
 fail() { echo "FAIL: $*" >&2; exit 1; }
 bad() { # expected-message args… — must fail
   local want="$1" out; shift
-  out="$(bash "$SCRIPT" env "$@" 2>&1 </dev/null)" && fail "accepted: $*"
+  out="$(bash "$SCRIPT" env --retry-wait 0 "$@" 2>&1 </dev/null)" && fail "accepted: $*"
   grep -q -- "$want" <<<"$out" || fail "$*: expected '$want', got: $out"
 }
 
@@ -129,5 +133,24 @@ run --provider bitwarden --project env >/dev/null || fail "--provider bitwarden 
 printf 'GOOD=1\nthis line has no equals\n' > "$W/broken.vars"
 bad "must be KEY=value"              --access-token-file "$W/token" --project env --vars "$W/broken.vars"
 PATH="/usr/bin:/bin" bad "bws not installed" --access-token-file "$W/token" --project env
+
+echo "== a failed read is retried, and its whole error is shown =="
+: > "$W/bws/failed.log"
+echo 2 > "$W/bws/fail_next"
+out="$(run --project env 2>"$W/retry.err")" || fail "two transient failures then success should succeed: $(cat "$W/retry.err")"
+grep -q '^ENV_ONLY=' <<<"$out" || fail "the retried read returned nothing useful"
+[ "$(grep -c . "$W/bws/failed.log")" = 2 ] || fail "expected 2 failed tries, got $(grep -c . "$W/bws/failed.log")"
+grep -q 'try 1 of 3' "$W/retry.err" || fail "a retry is not reported: $(cat "$W/retry.err")"
+: > "$W/bws/failed.log"
+echo 9 > "$W/bws/fail_next"
+bad "after 3 tries"                  --access-token-file "$W/token" --project env
+[ "$(grep -c . "$W/bws/failed.log")" = 3 ] || fail "a lasting failure took $(grep -c . "$W/bws/failed.log") tries, not --attempts (3)"
+: > "$W/bws/failed.log"
+echo 9 > "$W/bws/fail_next"
+bad "429 Too Many Requests"          --access-token-file "$W/token" --project env --attempts 2
+[ "$(grep -c . "$W/bws/failed.log")" = 2 ] || fail "--attempts 2 took $(grep -c . "$W/bws/failed.log") tries"
+echo 0 > "$W/bws/fail_next"
+bad "--attempts must be"             --access-token-file "$W/token" --project env --attempts 0
+bad "--retry-wait must be"           --access-token-file "$W/token" --project env --retry-wait soon
 
 echo "PASS"

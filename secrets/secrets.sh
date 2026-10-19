@@ -57,6 +57,12 @@ Options — every input is one; nothing is read from the environment:
   --out <file>               write here, mode 0600, instead of stdout. Written
                              whole or not at all.
   --server-url <url>         bitwarden: a self-hosted server
+  --attempts <n>             tries per project before giving up (default 3).
+                             A read can fail transiently (bitwarden: a rerun
+                             minutes later succeeds), so one failure is not
+                             the end of a deploy.
+  --retry-wait <seconds>     pause before the 2nd try, doubled before each
+                             later one (default 3)
   -h, --help                 this text
 
 Values are single-quoted for the shell, so spaces, quotes, $, backticks and
@@ -77,11 +83,11 @@ shopt -s inherit_errexit
 die() { echo "error: $*" >&2; exit 1; }
 usage() { help_env; }
 
-PROVIDER="bitwarden" PROJECTS=() TOKEN_FILE="" VARS="" OUT="" SERVER_URL=""
+PROVIDER="bitwarden" PROJECTS=() TOKEN_FILE="" VARS="" OUT="" SERVER_URL="" ATTEMPTS=3 RETRY_WAIT=3
 while [ $# -gt 0 ]; do
   case "$1" in --*=*) set -- "${1%%=*}" "${1#*=}" "${@:2}" ;; esac
   case "$1" in
-    --provider|--project|--access-token-file|--vars|--out|--server-url)
+    --provider|--project|--access-token-file|--vars|--out|--server-url|--attempts|--retry-wait)
       [ $# -ge 2 ] && [ -n "$2" ] || die "$1 needs a value (try --help)" ;;
   esac
   case "$1" in
@@ -91,6 +97,8 @@ while [ $# -gt 0 ]; do
     --vars)              VARS="$2"; shift 2 ;;
     --out)               OUT="$2"; shift 2 ;;
     --server-url)        SERVER_URL="$2"; shift 2 ;;
+    --attempts)          ATTEMPTS="$2"; shift 2 ;;
+    --retry-wait)        RETRY_WAIT="$2"; shift 2 ;;
     -h|--help)           usage; exit 0 ;;
     *)                   die "unknown argument '$1' (try --help)" ;;
   esac
@@ -102,6 +110,8 @@ esac
 [ "${#PROJECTS[@]}" -gt 0 ] || die "--project is required (the Secrets Manager project id)"
 [ -n "$TOKEN_FILE" ] || die "--access-token-file is required (a file, or - for stdin)"
 [ -z "$VARS" ] || [ -r "$VARS" ] || die "--vars: cannot read $VARS"
+[[ "$ATTEMPTS" =~ ^[1-9][0-9]*$ ]] || die "--attempts must be a whole number of at least 1"
+[[ "$RETRY_WAIT" =~ ^[0-9]+$ ]] || die "--retry-wait must be a whole number of seconds"
 
 command -v bws >/dev/null 2>&1 || die "bws not installed: https://bitwarden.com/help/secrets-manager-cli/"
 command -v jq >/dev/null 2>&1 || die "jq not installed"
@@ -143,9 +153,28 @@ if [ -n "$VARS" ]; then
   merged="$(jq -c --argjson add "$vars_json" '. + $add' <<<"$merged")"
 fi
 
+# A read is retried: in CI, about one Bitwarden read in four failed and the
+# same run passed minutes later. bws prints "Error:" on its first line and the
+# reason on the next ones, so the message keeps all of it, on one line; showing
+# only the first line hid every reason (LytronHQ/ops#93).
+read_project() { # project-id -> its JSON on stdout
+  local id="$1" try out wait="$RETRY_WAIT"
+  for try in $(seq 1 "$ATTEMPTS"); do
+    if out="$(bws_list "$id" 2>&1)"; then
+      printf '%s' "$out"
+      return 0
+    fi
+    if [ "$try" -lt "$ATTEMPTS" ]; then
+      echo "secrets: reading project $id failed (try $try of $ATTEMPTS), retrying in ${wait}s" >&2
+      sleep "$wait"
+      wait=$((wait * 2))
+    fi
+  done
+  die "bws could not read project $id after $ATTEMPTS tries — wrong access token, no access to that project, a wrong id, or the service failing: $(tr -s '[:space:]' ' ' <<<"$out" | head -c 600)"
+}
+
 for id in "${PROJECTS[@]}"; do
-  out="$(bws_list "$id" 2>&1)" \
-    || die "bws could not read project $id — wrong access token, no access to that project, or a wrong id: $(head -1 <<<"$out")"
+  out="$(read_project "$id")"
   jq -e 'type == "array"' >/dev/null 2>&1 <<<"$out" || die "bws returned something unexpected for project $id: $(head -c 200 <<<"$out")"
   [ "$(jq 'length' <<<"$out")" -gt 0 ] || die "project $id returned no secrets — wrong project id?"
   merged="$(jq -c --argjson add "$(jq -c 'map({(.key): .value}) | add' <<<"$out")" '. + $add' <<<"$merged")"

@@ -67,6 +67,8 @@ unrelated `export` in your shell cannot redirect it.
 | `--vars <file>` | none | non-secret `KEY=value` lines, read first. Blank lines and `#` comments are skipped; the value is everything after the first `=`, taken literally |
 | `--out <file>` | stdout | write here instead, mode `0600`. Written to a temporary file beside it and moved into place, so a failed run leaves the previous file as it was |
 | `--server-url <url>` | Bitwarden's cloud | `bitwarden`: a self-hosted server |
+| `--attempts <n>` | `3` | tries per project before giving up; a read can fail transiently and pass minutes later |
+| `--retry-wait <seconds>` | `3` | pause before the 2nd try, doubled before each later one |
 | `-h`, `--help` | | print the options |
 
 ## What it guarantees
