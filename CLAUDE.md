@@ -59,7 +59,8 @@ releasing); read the relevant one before changing something.
 - After a release: verify from an empty directory (ops-get's hash against the
   new `SHA256SUMS`, `ops-get --list`, a fetch), set the release notes (what
   changed, a migration table for a major, the new `ops-get` and
-  `ops-get.ps1` hashes), and update the hashes in README.md through a PR.
+  `ops-get.ps1` hashes), and point README.md's install lines and hashes at
+  the new tag through a PR — every release, even when ops-get is unchanged.
 - Visual testing, PWA updates and a visible build version do not apply: there
   is no UI. The version is the release tag.
 
