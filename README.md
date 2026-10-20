@@ -32,7 +32,7 @@ A fresh server has `curl` and little else. `ops-get` fetches one script from a
 pinned release and verifies it before it ever runs.
 
 ```sh
-curl -fsSL https://github.com/LytronHQ/ops/releases/download/v6.0.0/ops-get -o ops-get
+curl -fsSL https://github.com/LytronHQ/ops/releases/download/v6.1.0/ops-get -o ops-get
 echo "e113f0574774507270f9c9acc83ae167011b9cc3a270a4082807fd04ecfe3900  ops-get" | sha256sum -c
 chmod +x ops-get
 
@@ -57,7 +57,7 @@ Windows has, or PowerShell 7:
 
 ```powershell
 [Net.ServicePointManager]::SecurityProtocol = 'Tls12'   # Windows PowerShell 5.1 needs this for GitHub
-Invoke-WebRequest https://github.com/LytronHQ/ops/releases/download/v6.0.0/ops-get.ps1 -OutFile ops-get.ps1 -UseBasicParsing
+Invoke-WebRequest https://github.com/LytronHQ/ops/releases/download/v6.1.0/ops-get.ps1 -OutFile ops-get.ps1 -UseBasicParsing
 if ((Get-FileHash .\ops-get.ps1).Hash -ne '4A2057F855B54A2A2A121E9D65357598C8E3FCF25F0599CF1A7DC85880F61A4F') { throw 'ops-get.ps1 does not match' }
 
 powershell -ExecutionPolicy Bypass -File .\ops-get.ps1 -List v5.0.0
