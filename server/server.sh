@@ -541,14 +541,21 @@ clean_package_cache() {
 
 # Untouched by every measure systemd-tmpfiles uses — modified, accessed, and
 # changed — and never inside what belongs to a running service or a session.
+# The *_files functions print the files NUL-separated, or, given find actions
+# (the clean_* functions pass $DELETE), run those instead. Removing by a path
+# printed earlier re-resolved every directory in it, so a user who swapped one
+# of their own directories for a symlink in between redirected root's unlink
+# to another directory (LytronHQ/ops#103). -execdir runs rm inside the
+# directory find itself walked, on ./name, so nothing is resolved again.
+DELETE=(-execdir rm -f -- {} +)
 temp_files() {
-  local d
+  local d act=(-print0); [ $# -eq 0 ] || act=("$@")
   for d in "$ROOT/tmp" "$ROOT/var/tmp"; do
     [ -d "$d" ] || continue
     find "$d" -xdev -mindepth 1 \
       \( -name 'systemd-private-*' -o -name 'snap-private-tmp' -o -name '.X11-unix' -o -name '.ICE-unix' \
          -o -name '.XIM-unix' -o -name '.font-unix' -o -name '.Test-unix' \) -prune -o \
-      -type f "${TEMP_OLD[@]}" -print0 2>/dev/null || true
+      -type f "${TEMP_OLD[@]}" "${act[@]}" 2>/dev/null || true
   done
 }
 size_temp() { temp_files | sum_files; }
@@ -563,7 +570,7 @@ clean_temp() {
     find "$d" -xdev -mindepth 1 \( -name 'systemd-private-*' -o -name 'snap-private-tmp' -o -name '.*-unix' \) -prune -o \
       -type d "${TEMP_OLD[@]:0:2}" -print 2>/dev/null || true
   done | awk '{ print length($0) "\t" $0 }' | sort -rn | cut -f2-)"
-  temp_files | xargs -0 -r rm -f -- || return 1
+  temp_files "${DELETE[@]}"
   while IFS= read -r d; do [ -n "$d" ] && rmdir -- "$d" 2>/dev/null || true; done <<<"$dirs"
 }
 
@@ -607,29 +614,30 @@ clean_journal() {
 # --- rotated-logs -------------------------------------------------------------
 
 rotated_files() {
+  local act=(-print0); [ $# -eq 0 ] || act=("$@")
   [ -d "$ROOT/var/log" ] || return 0
   # Unreadable directories are expected without root, which is said once up
   # front; they must not make a category look failed. Hence || true on finds.
   find "$ROOT/var/log" -xdev -path "$ROOT/var/log/journal" -prune -o -type f \
     \( -name '*.gz' -o -name '*.xz' -o -name '*.bz2' -o -name '*.zst' -o -name '*.old' -o -regex '.*\.[0-9]+' \) \
-    "${LOG_OLD[@]}" -print0 2>/dev/null || true
+    "${LOG_OLD[@]}" "${act[@]}" 2>/dev/null || true
 }
 size_rotated_logs() { rotated_files | sum_files; }
 how_rotated_logs() { [ "$LOG_AGE" = 0 ] && echo "any age" || echo "older than $LOG_AGE days"; }
-clean_rotated_logs() { rotated_files | xargs -0 -r rm -f -- || return 1; }
+clean_rotated_logs() { rotated_files "${DELETE[@]}"; }
 
 # --- crash-dumps --------------------------------------------------------------
 
 dump_files() {
-  local d
+  local d act=(-print0); [ $# -eq 0 ] || act=("$@")
   for d in "$ROOT/var/crash" "$ROOT/var/lib/systemd/coredump"; do
     [ -d "$d" ] || continue
-    find "$d" -xdev -mindepth 1 -type f "${DUMP_OLD[@]}" -print0 2>/dev/null || true
+    find "$d" -xdev -mindepth 1 -type f "${DUMP_OLD[@]}" "${act[@]}" 2>/dev/null || true
   done
 }
 size_crash_dumps() { dump_files | sum_files; }
 how_crash_dumps() { [ "$DUMP_AGE" = 0 ] && echo "any age" || echo "older than $DUMP_AGE days"; }
-clean_crash_dumps() { dump_files | xargs -0 -r rm -f -- || return 1; }
+clean_crash_dumps() { dump_files "${DELETE[@]}"; }
 
 # --- thumbnails ---------------------------------------------------------------
 
@@ -642,10 +650,13 @@ thumbnail_dirs() {
   fi
   return 0
 }
-thumbnail_files() { local d; while read -r d; do find "$d" -xdev -type f -print0 2>/dev/null || true; done < <(thumbnail_dirs); }
+thumbnail_files() {
+  local d act=(-print0); [ $# -eq 0 ] || act=("$@")
+  while read -r d; do find "$d" -xdev -type f "${act[@]}" 2>/dev/null || true; done < <(thumbnail_dirs)
+}
 size_thumbnails() { thumbnail_files | sum_files; }
 how_thumbnails() { echo "regenerated on demand"; }
-clean_thumbnails() { thumbnail_files | xargs -0 -r rm -f -- || return 1; }
+clean_thumbnails() { thumbnail_files "${DELETE[@]}"; }
 
 # --- docker (opt-in) ------------------------------------------------------------
 
