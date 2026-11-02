@@ -45,6 +45,15 @@ releasing); read the relevant one before changing something.
   disposable VM or CI runner — never against the machine you are working on.
 - Run the script, do not only read it. Tests run the real script against
   stubs; a new check gets a mutation test (break the code, see the test fail).
+- A secret never reaches any child's argv, not only the CLI's: `env VAR=secret
+  cmd` and `jq --argjson x "$secret"` both put it in /proc/<pid>/cmdline for
+  every local account. Export in a subshell and `exec`, or pass on stdin; test
+  with argv-logging shims for every child (2026-11-02, #97).
+- Since 2026-11-02 the repo has immutable releases and requires every action
+  pinned to a full commit SHA. release.yml must upload all assets before the
+  release is published (softprops/action-gh-release does this for non-draft
+  releases); a step that adds assets afterwards fails. Resolve a new action
+  SHA from the action's own tag refs, never by guessing (#99, #101).
 - PowerShell files are ASCII only (5.1 reads a BOM-less file as
   Windows-1252). The bash and PowerShell pitfalls already hit are listed in
   CONTRIBUTING.md; check them before writing either.
