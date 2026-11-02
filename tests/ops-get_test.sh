@@ -16,6 +16,9 @@
 #   9. with a MANIFEST, --list marks what does not run here, a fetch of it
 #      says so, and a MANIFEST that does not match SHA256SUMS is refused
 #  10. a version without its v means the tag with one
+#  11. an existing destination is replaced by a new file (new inode, mode 755),
+#      not written into: a file someone else created keeps their ownership and
+#      write bits otherwise (LytronHQ/ops#98)
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -70,6 +73,17 @@ echo "== a good fetch verifies and lands executable =="
 get v1.0.0 hello.sh "$WORK/out/sub/hello.sh" >/dev/null || fail "good fetch failed"
 [ -x "$WORK/out/sub/hello.sh" ] || fail "fetched file is not executable"
 [ "$("$WORK/out/sub/hello.sh")" = "hello" ] || fail "fetched file has the wrong content"
+
+echo "== an existing destination is replaced, not written into =="
+pre="$WORK/out/shared/hello.sh"
+mkdir -p "$(dirname "$pre")"
+printf 'old\n' > "$pre"; chmod 666 "$pre"
+before="$(stat -c %i "$pre")"
+get v1.0.0 hello.sh "$pre" >/dev/null || fail "fetch over an existing file failed"
+[ "$(stat -c %i "$pre")" != "$before" ] || fail "the existing destination was written in place"
+[ "$(stat -c %a "$pre")" = "755" ] || fail "destination mode is $(stat -c %a "$pre"), not 755"
+[ "$("$pre")" = "hello" ] || fail "replaced file has the wrong content"
+[ -z "$(find "$(dirname "$pre")" -name '.ops-get.*')" ] || fail "a temporary file was left behind"
 
 echo "== a tampered file is refused =="
 refused "tampered" tampered hello.sh "CHECKSUM MISMATCH"
