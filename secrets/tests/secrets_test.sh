@@ -15,7 +15,9 @@
 #      never in its argv; a wrong one fails
 #   5. BWS_* already in the caller's environment is not used
 #   6. an unreadable project, an empty one, a bad key and bad input all fail
-#   7. a failed read is retried (--attempts, --retry-wait): a transient failure
+#   7. no child process gets the token or a secret value in its argv: env and
+#      jq are shimmed to log their arguments, like bws (LytronHQ/ops#97)
+#   8. a failed read is retried (--attempts, --retry-wait): a transient failure
 #      recovers; a lasting one fails after exactly --attempts tries, and the
 #      message carries bws's whole error, not only its "Error:" first line
 set -euo pipefail
@@ -28,6 +30,13 @@ trap 'rm -rf "$W"' EXIT
 # bws on PATH is the fake, under its real name.
 mkdir -p "$W/bin" "$W/bws"
 cp "$HERE/fake-bws" "$W/bin/bws"
+# env and jq log their argv too: a secret on any child's command line is
+# readable by every local account through /proc, not only on bws's.
+for tool in env jq; do
+  real="$(command -v "$tool")"
+  printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> "%s/argv-all.log"\nexec %s "$@"\n' "$W" "$real" > "$W/bin/$tool"
+  chmod +x "$W/bin/$tool"
+done
 export FAKE_BWS_DIR="$W/bws"
 export PATH="$W/bin:$PATH"
 printf 'machine-token-123\n' > "$W/bws/token"
@@ -55,6 +64,9 @@ json.dump(env, open(f"{d}/env.json", "w"))
 json.dump([], open(f"{d}/empty.json", "w"))
 json.dump([{"key": "OK", "value": "1"}, {"key": "BAD-NAME", "value": "x"},
            {"key": "1BAD", "value": "y"}], open(f"{d}/badkeys.json", "w"))
+# jq's $ also matches before a final newline; this key must still be refused.
+json.dump([{"key": "OK", "value": "1"}, {"key": "TRAILING\n", "value": "x"}],
+          open(f"{d}/newlinekey.json", "w"))
 PY
 cat > "$W/app.vars" <<'VARS'
 # non-secret settings
@@ -108,6 +120,14 @@ out="$(printf 'machine-token-123' | bash "$SCRIPT" env --access-token-file - --p
 grep -q '^ENV_ONLY=' <<<"$out" || fail "stdin run printed nothing useful"
 grep -q 'machine-token' "$W/bws/argv.log" && fail "the token was passed to bws as an argument"
 printf 'wrong\n' > "$W/wrong"
+
+echo "== no child gets the token or a secret value in its argv =="
+: > "$W/argv-all.log"
+run --vars "$W/app.vars" --project shared --project env >/dev/null
+[ -s "$W/argv-all.log" ] || fail "the env/jq argv shims recorded nothing"
+for secret in machine-token-123 from-shared env-wins padded; do
+  grep -q -- "$secret" "$W/argv-all.log" && fail "'$secret' was on a child's command line"
+done
 bad "could not read project" --access-token-file "$W/wrong" --project env
 
 echo "== BWS_* in the caller's environment is ignored =="
@@ -122,6 +142,7 @@ echo "== bad projects, keys and input fail =="
 bad "returned no secrets"            --access-token-file "$W/token" --project empty
 bad "not valid variable names"       --access-token-file "$W/token" --project badkeys
 bad "BAD-NAME"                       --access-token-file "$W/token" --project badkeys
+bad "not valid variable names"       --access-token-file "$W/token" --project newlinekey
 bad "--project is required"          --access-token-file "$W/token"
 bad "--access-token-file is required" --project env
 bad "cannot read"                    --access-token-file /nonexistent --project env
