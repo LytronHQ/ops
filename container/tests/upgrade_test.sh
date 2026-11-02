@@ -17,6 +17,7 @@
 #   6. --app pocketbase: logs in with a password holding a quote, JSON-escaped,
 #      and the password never in curl's arguments
 #   7. old snapshots pruned to --keep; bad input refused
+#   8. a new snapshot directory is 0700 and its archives 0600
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -77,6 +78,9 @@ run --to 2.0 || fail "upgrade failed: $(cat "$W/stderr")"
 grep -qx 'APPV=2.0' "$W/app.env" && grep -qx 'OTHER=kept' "$W/app.env" || fail "env file: $(cat "$W/app.env")"
 [ "$(ls "$W/snaps" | wc -l)" = 1 ] || fail "expected one snapshot"
 tar tzf "$W/snaps"/*.tar.gz | grep -q 'data.db' || fail "the snapshot has no data.db"
+# A copy of the data must be no more readable than the data (LytronHQ/ops#104).
+[ "$(stat -c %a "$W/snaps")" = 700 ] || fail "snapshot directory is $(stat -c %a "$W/snaps"), not 700"
+[ "$(stat -c %a "$W/snaps"/*.tar.gz)" = 600 ] || fail "snapshot is $(stat -c %a "$W/snaps"/*.tar.gz), not 600"
 
 echo "== started, migrated, unhealthy: the data is rolled back too =="
 reset 2.0

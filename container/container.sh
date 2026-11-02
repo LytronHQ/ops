@@ -234,7 +234,12 @@ assert_same_storage() { # context
   [ "$now" = "$VOL" ] || die "$DATA moved during $1: was '$VOL', now '$now'. $SERVICE is running on the WRONG storage — usually a variable the compose file needs is missing. The data is intact at '$VOL'; stop this container before it takes writes."
 }
 
-mkdir -p "$SNAP_DIR"
+# A snapshot is a full copy of the service's data. The live volume sits under
+# /var/lib/docker, out of other local users' reach; a 0755 directory with 0644
+# archives handed them a readable copy (LytronHQ/ops#104). A new directory is
+# made 0700 and every archive of this service is kept 0600; an existing
+# directory's mode is left alone, since --snapshots may name a shared one.
+[ -d "$SNAP_DIR" ] || mkdir -p -m 0700 "$SNAP_DIR"
 SNAP="$SNAP_DIR/$SERVICE-$(date -u +%Y%m%dT%H%M%SZ)-$CURRENT.tar.gz"
 in_helper() { # mode command — run in the helper image with the data at /data and snapshots at /backup
   docker run --rm -v "$VOL:/data$1" -v "$SNAP_DIR:/backup" "$HELPER" sh -c "$2"
@@ -252,9 +257,13 @@ compose "$CURRENT" stop "$SERVICE" >/dev/null
 
 # --- 2. snapshot --------------------------------------------------------------------
 log "snapshotting $DATA -> $SNAP"
-if ! in_helper :ro "tar czf /backup/$(basename "$SNAP") -C /data ." >/dev/null; then
+if ! in_helper :ro "umask 077; tar czf /backup/$(basename "$SNAP") -C /data ." >/dev/null; then
   restart_current; die "the snapshot failed; nothing was upgraded."
 fi
+# Also from here: the helper image's shell or umask is not ours to rely on, and
+# snapshots made before this change are tightened too.
+find "$SNAP_DIR" -maxdepth 1 -type f -name "$SERVICE-*.tar.gz" -exec chmod 600 {} + \
+  || log "could not make the snapshots in $SNAP_DIR private (chmod 600)"
 # tar succeeds on an empty directory, so success is not evidence. Listed into a
 # variable, not piped to grep -q: grep exits at the match, tar takes SIGPIPE,
 # and pipefail fails a perfectly good snapshot whenever the file is not last.
