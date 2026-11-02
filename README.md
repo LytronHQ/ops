@@ -32,8 +32,8 @@ A fresh server has `curl` and little else. `ops-get` fetches one script from a
 pinned release and verifies it before it ever runs.
 
 ```sh
-curl -fsSL https://github.com/LytronHQ/ops/releases/download/v6.1.0/ops-get -o ops-get
-echo "e113f0574774507270f9c9acc83ae167011b9cc3a270a4082807fd04ecfe3900  ops-get" | sha256sum -c
+curl -fsSL https://github.com/LytronHQ/ops/releases/download/v6.1.1/ops-get -o ops-get
+echo "077e49c8a8853a08de1ded75dd546a9db503e0faa155d8b94b20a0a77896708d  ops-get" | sha256sum -c
 chmod +x ops-get
 
 ./ops-get --list v5.0.0                    # what this version has
@@ -57,8 +57,8 @@ Windows has, or PowerShell 7:
 
 ```powershell
 [Net.ServicePointManager]::SecurityProtocol = 'Tls12'   # Windows PowerShell 5.1 needs this for GitHub
-Invoke-WebRequest https://github.com/LytronHQ/ops/releases/download/v6.1.0/ops-get.ps1 -OutFile ops-get.ps1 -UseBasicParsing
-if ((Get-FileHash .\ops-get.ps1).Hash -ne '4A2057F855B54A2A2A121E9D65357598C8E3FCF25F0599CF1A7DC85880F61A4F') { throw 'ops-get.ps1 does not match' }
+Invoke-WebRequest https://github.com/LytronHQ/ops/releases/download/v6.1.1/ops-get.ps1 -OutFile ops-get.ps1 -UseBasicParsing
+if ((Get-FileHash .\ops-get.ps1).Hash -ne 'CFF48D29D0F8A3FE35F68DC4B9628A49458208128E4BF80018672DB6C9355016') { throw 'ops-get.ps1 does not match' }
 
 powershell -ExecutionPolicy Bypass -File .\ops-get.ps1 -List v5.0.0
 powershell -ExecutionPolicy Bypass -File .\ops-get.ps1 server.ps1 v5.0.0
