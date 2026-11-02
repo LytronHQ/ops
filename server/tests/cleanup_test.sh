@@ -17,6 +17,8 @@
 #   4. pacman's cache is sized by pacman -Sc's rule: installed versions stay
 #   5. a category whose tool fails is named and fails the run
 #   6. --only, --skip, formats, and bad input
+#   7. a directory swapped for a symlink after the listing does not redirect
+#      the delete out of the cleaned tree (LytronHQ/ops#103)
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -206,6 +208,28 @@ chmod +x "$W/sbin/snap"
 out="$(PATH="$W/sbin:$PATH" bash "$SCRIPT" cleanup --only snap-revisions --format tsv 2>/dev/null | tail -1)"
 [ "$(cut -f3 <<<"$out")" = 3 ] || fail "should count the 3 disabled revisions, not the enabled ones: $out"
 PATH="$W/sbin:$PATH" bash "$SCRIPT" cleanup --format tsv 2>/dev/null | cut -f1 | grep -qx snap-revisions && fail "snap-revisions ran without being named"
+
+echo "== a directory swapped for a symlink does not redirect the delete =="
+# The swap is made deterministic: the first rm called swaps the user's own
+# directory for a symlink to elsewhere, as a racing user would, then runs the
+# real rm. A delete by the earlier-listed path would follow it out of the tree.
+S="$W/swap"; SR="$S/root"
+mk "$SR/home/mallory/.cache/thumbnails/normal/victim.conf" 10
+mk "$S/outside/victim.conf" 10
+mkdir -p "$S/bin"
+cat > "$S/bin/rm" <<SHIM
+#!/bin/sh
+if [ ! -e "$S/swapped" ]; then
+  : > "$S/swapped"
+  mv "$SR/home/mallory/.cache/thumbnails/normal" "$SR/home/mallory/.cache/thumbnails/normal.real"
+  ln -s "$S/outside" "$SR/home/mallory/.cache/thumbnails/normal"
+fi
+exec $(command -v rm) "\$@"
+SHIM
+chmod +x "$S/bin/rm"
+PATH="$S/bin:$PATH" bash "$SCRIPT" cleanup --root "$SR" --only thumbnails --apply >/dev/null 2>&1 || true
+[ -e "$S/swapped" ] || fail "the swap shim never ran"
+[ -e "$S/outside/victim.conf" ] || fail "a swapped-in symlink redirected the delete out of the cleaned tree"
 
 echo "== --only, --skip, formats, bad input =="
 [ "$(run --only temp,journal --format tsv | tail -n +2 | cut -f1 | tr '\n' ' ')" = "temp journal " ] || fail "--only"
