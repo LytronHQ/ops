@@ -129,12 +129,13 @@ ACCESS_TOKEN="${ACCESS_TOKEN%%[[:space:]]}"
 # too. Clear them all and hand over exactly what this run was given, so an
 # unrelated `export` in the caller's shell cannot point it somewhere else. The
 # token goes in the child's environment — readable only by this user — never
-# in its argv.
+# in any argv: passing it as `env BWS_ACCESS_TOKEN=…` put it on the external
+# env's command line, visible to every local account (LytronHQ/ops#97).
 bws_list() { # project-id
-  local env=(-u BWS_ACCESS_TOKEN -u BWS_SERVER_URL -u BWS_PROFILE -u BWS_CONFIG_FILE
-             "BWS_ACCESS_TOKEN=$ACCESS_TOKEN")
-  [ -z "$SERVER_URL" ] || env+=("BWS_SERVER_URL=$SERVER_URL")
-  env "${env[@]}" bws secret list "$1" --output json --color no
+  ( unset BWS_ACCESS_TOKEN BWS_SERVER_URL BWS_PROFILE BWS_CONFIG_FILE
+    export BWS_ACCESS_TOKEN="$ACCESS_TOKEN"
+    [ -z "$SERVER_URL" ] || export BWS_SERVER_URL="$SERVER_URL"
+    exec bws secret list "$1" --output json --color no )
 }
 
 # Everything is merged as one JSON object, later keys replacing earlier ones,
@@ -150,7 +151,7 @@ if [ -n "$VARS" ]; then
      | capture("^(?<k>[^=]*)=(?<v>.*)$")
      | {(.k): .v}] | add // {}' <"$VARS")" \
     || die "--vars $VARS: every line must be KEY=value, a # comment or blank"
-  merged="$(jq -c --argjson add "$vars_json" '. + $add' <<<"$merged")"
+  merged="$(printf '%s\n%s\n' "$merged" "$vars_json" | jq -cs '.[0] + .[1]')"
 fi
 
 # A read is retried: in CI, about one Bitwarden read in four failed and the
@@ -177,12 +178,15 @@ for id in "${PROJECTS[@]}"; do
   out="$(read_project "$id")"
   jq -e 'type == "array"' >/dev/null 2>&1 <<<"$out" || die "bws returned something unexpected for project $id: $(head -c 200 <<<"$out")"
   [ "$(jq 'length' <<<"$out")" -gt 0 ] || die "project $id returned no secrets — wrong project id?"
-  merged="$(jq -c --argjson add "$(jq -c 'map({(.key): .value}) | add' <<<"$out")" '. + $add' <<<"$merged")"
+  # Both documents go in on stdin: as a --argjson value the project's secrets
+  # sat in jq's argv, readable through /proc (LytronHQ/ops#97).
+  merged="$(printf '%s\n%s\n' "$merged" "$out" | jq -cs '.[0] + (.[1] | map({(.key): .value}) | add)')"
 done
 
 # A key that is not a shell name would break `set -a; . file` for everything
-# after it, far from here. Name them now.
-bad="$(jq -r 'keys[] | select(test("^[A-Za-z_][A-Za-z0-9_]*$") | not)' <<<"$merged")"
+# after it, far from here. Name them now. \A…\z, not ^…$: jq's $ also matches
+# before a final newline, which let "NAME\n" through unquoted (LytronHQ/ops#97).
+bad="$(jq -r 'keys[] | select(test("\\A[A-Za-z_][A-Za-z0-9_]*\\z") | not)' <<<"$merged")"
 [ -z "$bad" ] || die "not valid variable names, rename them in Bitwarden or --vars: $(tr '\n' ' ' <<<"$bad")"
 
 # @sh single-quotes the value and escapes any quote inside it.
