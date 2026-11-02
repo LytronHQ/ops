@@ -7,11 +7,15 @@ on:
   push:
     branches: [main]
 
+# Tests need no write access; actions are pinned to a commit (LytronHQ/ops#99).
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Check every script parses
         run: |
@@ -30,7 +34,7 @@ jobs:
   harden:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Harden the runner, then check it and log in again
         run: sudo env OPS_TEST_DISPOSABLE=1 bash server/tests/harden_test.sh
 
@@ -47,7 +51,7 @@ jobs:
       run:
         shell: ${{ matrix.shell }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Run the PowerShell suites
         run: |
