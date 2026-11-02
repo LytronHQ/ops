@@ -35,14 +35,14 @@ server is the one place you cannot install a runtime first.
 ### Use it
 
 ```sh
-./ops-get server.sh v5.0.0 /tmp/server.sh
-sudo /tmp/server.sh harden
+./ops-get server.sh v5.0.0 ./server.sh
+sudo ./server.sh harden
 ```
 
 Keep one extra port open — say a database only your private network reaches:
 
 ```sh
-sudo /tmp/server.sh harden --allow 10.0.0.0/16:5432
+sudo ./server.sh harden --allow 10.0.0.0/16:5432
 ```
 
 [`ops-get`](../README.md#ops-get) is how every module is fetched: a pinned

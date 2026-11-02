@@ -8,7 +8,7 @@
 #   ops-get --list <version>               the scripts in that version, marking
 #                                          any that do not run on this machine
 #
-#   ops-get server.sh v5.0.0 /tmp/server.sh
+#   ops-get server.sh v5.0.0 ./server.sh
 #
 # A version is the release to fetch from, v5.0.0 (5.0.0 means the same). It is
 # the script's version, not this file's: any ops-get fetches from any release.
@@ -149,7 +149,18 @@ fetch_verified "$SCRIPT"
 runs_here "$SCRIPT" \
   || echo "ops-get: note: $SCRIPT does not run on $PLATFORM (runs on: $(platforms_of "$SCRIPT")); fetched anyway" >&2
 
-mkdir -p "$(dirname "$DEST")"
-cp "$tmp/$SCRIPT" "$DEST"
-chmod +x "$DEST"
-echo "$DEST"
+# A new file we own, renamed over DEST. cp into an existing DEST rewrote that
+# file in place, keeping its owner and write bits, so a file another local
+# user had created (say /tmp/server.sh) stayed theirs to change before it was
+# run (LytronHQ/ops#98). In a sticky directory the rename over someone else's
+# file fails, and then ops-get stops instead.
+dir="$(dirname "$DEST")"
+[ ! -d "$DEST" ] || die "$DEST is a directory; give the file's path"
+mkdir -p "$dir"
+new="$(mktemp "$dir/.ops-get.XXXXXX")" || die "cannot create a file in $dir"
+if cp "$tmp/$SCRIPT" "$new" && chmod 755 "$new" && mv -f "$new" "$DEST"; then
+  echo "$DEST"
+else
+  rm -f "$new"
+  die "cannot replace $DEST — is it owned by another user? Fetch into a directory only you can write"
+fi

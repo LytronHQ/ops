@@ -9,7 +9,8 @@
 #
 # What it asserts: a good fetch lands; a tampered file, a missing script, an
 # unlisted script, a release without SHA256SUMS and a missing version are
-# refused with nothing written; a version without its v means the tag; -List marks what does not run here; a fetch of
+# refused with nothing written; an existing destination
+# is replaced by a new file, not written into; a version without its v means the tag; -List marks what does not run here; a fetch of
 # such a script says so; a tampered MANIFEST is refused; usage and -Help.
 $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $PSCommandPath
@@ -85,6 +86,21 @@ try {
   $r = Invoke-OpsGet hello.ps1 v1 $dest -BaseUrl "$base/v1"
   if ($r.Code -ne 0) { Fail "good fetch failed: $($r.Out)" }
   if ([IO.File]::ReadAllText($dest) -ne $hello) { Fail 'fetched file has the wrong content' }
+
+  'an existing destination is replaced, not written into'
+  # A hard link to the old file shows whether its bytes were rewritten in place
+  # (the link would then show the new content) or the name now points at a new
+  # file (the link keeps the old content). Same on NTFS and Linux.
+  $pre = Join-Path $out 'shared/hello.ps1'
+  New-Item -ItemType Directory -Path (Split-Path -Parent $pre) -Force | Out-Null
+  [IO.File]::WriteAllText($pre, "old`n")
+  $link = Join-Path $out 'shared/old-link'
+  New-Item -ItemType HardLink -Path $link -Value $pre | Out-Null
+  $r = Invoke-OpsGet hello.ps1 v1 $pre -BaseUrl "$base/v1"
+  if ($r.Code -ne 0) { Fail "fetch over an existing file failed: $($r.Out)" }
+  if ([IO.File]::ReadAllText($pre) -ne $hello) { Fail 'replaced file has the wrong content' }
+  if ([IO.File]::ReadAllText($link) -ne "old`n") { Fail 'the existing destination was written in place' }
+  if (@(Get-ChildItem -Force -LiteralPath (Split-Path -Parent $pre) -Filter '.ops-get.*').Count) { Fail 'a temporary file was left behind' }
 
   'refusals leave nothing behind'
   Refused 'tampered' 'tampered' 'hello.ps1' 'CHECKSUM MISMATCH'

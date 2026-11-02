@@ -152,10 +152,26 @@ try {
     [Console]::Error.WriteLine("ops-get: note: $Script does not run on $Platform (runs on: $($platforms[$Script] -join ' ')); fetched anyway")
   }
 
+  # A new file, renamed over Destination. Copying into an existing file kept
+  # its owner and permissions, so a file another local user had created stayed
+  # theirs to change before it was run (LytronHQ/ops#98). If the rename is not
+  # allowed, stop instead.
+  if (Test-Path -LiteralPath $Destination -PathType Container) {
+    Stop-OpsGet "$Destination is a directory; give the file's path"
+  }
   $parent = Split-Path -Parent $Destination
-  if ($parent -and -not (Test-Path -LiteralPath $parent)) { New-Item -ItemType Directory -Path $parent | Out-Null }
-  Copy-Item -LiteralPath (Join-Path $tmp $Script) -Destination $Destination -Force
-  if ($Platform -ne 'windows') { chmod +x -- $Destination }
+  if (-not $parent) { $parent = '.' }
+  if (-not (Test-Path -LiteralPath $parent)) { New-Item -ItemType Directory -Path $parent | Out-Null }
+  $new = Join-Path $parent ('.ops-get.' + [guid]::NewGuid().ToString('N'))
+  try {
+    Copy-Item -LiteralPath (Join-Path $tmp $Script) -Destination $new
+    if ($Platform -ne 'windows') { chmod 755 -- $new; if ($LASTEXITCODE -ne 0) { throw "chmod failed" } }
+    Move-Item -LiteralPath $new -Destination $Destination -Force
+  }
+  catch {
+    Remove-Item -LiteralPath $new -Force -ErrorAction SilentlyContinue
+    Stop-OpsGet "cannot replace $Destination - is it owned by another user? Fetch into a directory only you can write ($($_.Exception.Message))"
+  }
   $Destination
 }
 finally {

@@ -37,8 +37,8 @@ echo "e113f0574774507270f9c9acc83ae167011b9cc3a270a4082807fd04ecfe3900  ops-get"
 chmod +x ops-get
 
 ./ops-get --list v5.0.0                    # what this version has
-./ops-get server.sh v5.0.0 /tmp/server.sh
-sudo /tmp/server.sh harden
+./ops-get server.sh v5.0.0 ./server.sh
+sudo ./server.sh harden
 ```
 
 The second line checks `ops-get` itself against the hash printed here, before
