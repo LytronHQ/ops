@@ -99,6 +99,22 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$LAB" ] || die "--dir is empty"
 
+# The lab directory holds the image every VM boots from and is written by path.
+# The default is a fixed name in world-writable /var/tmp, so whoever creates it
+# first owns it: mkdir -p accepted a directory another local user had made,
+# with their base.img in it (LytronHQ/ops#105). Use it only if it is a real
+# directory, ours, and not writable by group or others.
+lab_private() {
+  [ -e "$LAB" ] || [ -L "$LAB" ] || return 0
+  local why=""
+  if [ -L "$LAB" ] || [ ! -d "$LAB" ]; then why="not a directory (or a symlink)"
+  elif [ ! -O "$LAB" ]; then why="owned by $(stat -c %U "$LAB"), not you"
+  elif [ $((0$(stat -c %a "$LAB") & 022)) -ne 0 ]; then why="writable by group or others (mode $(stat -c %a "$LAB"))"
+  fi
+  [ -z "$why" ] || die "--dir $LAB is $why; remove it, or give a directory only you can write (--dir)"
+}
+[ "$CMD" = help ] || lab_private
+
 CONN="qemu:///system"
 CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/vmlab"
 CACHED="$CACHE/$(basename "$IMAGE")"
@@ -290,7 +306,11 @@ case "$CMD" in
       for e in "${SPECS[@]}"; do NAMES+=("${e%%:*}"); done
     fi
     preflight
-    mkdir -p "$LAB" "$CACHE"
+    mkdir -p "$CACHE"
+    # 0755: qemu runs as its own user and must read the disks. Checked again
+    # after mkdir, since mkdir -p is satisfied by a directory made meanwhile.
+    mkdir -p -m 0755 "$LAB"
+    lab_private
     if [ ! -f "$CACHED" ]; then
       log "==> downloading $(basename "$IMAGE") (once; cached in $CACHE)"
       curl -fL --progress-bar "$IMAGE" -o "$CACHED.part" && mv "$CACHED.part" "$CACHED"
