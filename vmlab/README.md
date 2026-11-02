@@ -62,7 +62,7 @@ is created. `--flag value` and `--flag=value` both work.
 | `--user <name>` | `dev` | `create`: login user, with passwordless sudo |
 | `--image <url>` | Ubuntu 24.04 cloud image | `create`: base image, qcow2. Downloaded once, cached in `~/.cache/vmlab`. The Debian 12 `genericcloud` image works too |
 | `--prefix <p>` | `vmlab-` | VM name prefix. Everything with it is "a vmlab VM" |
-| `--dir <path>` | `/var/tmp/vmlab` | where disks live. Must be readable by the qemu user — **not** under a `0750` home directory. Every command needs the same value `create` had |
+| `--dir <path>` | `/var/tmp/vmlab` | where disks live. Must be readable by the qemu user — **not** under a `0750` home directory. Every command needs the same value `create` had. Refused if it is a symlink, not yours, or writable by group or others |
 
 The VMs are key-only, so `create` refuses to build one nobody could log into: it
 needs at least one key, from `--key` or `--launchpad`. Before downloading
