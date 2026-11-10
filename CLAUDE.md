@@ -83,5 +83,14 @@ releasing); read the relevant one before changing something.
 - Tests use stubs and fake CLIs on `PATH`, never real services, real
   credentials or real servers.
 
+## Model use
+- This project runs on Sonnet. Do routine work (small edits, tests, git,
+  status files, reading) yourself.
+- For a heavy step (design of a new feature, hard debugging after one failed
+  attempt, a security or architecture review, a large refactor, an audit across
+  many files) delegate that step to a subagent with the Agent tool and model
+  "opus", then use its result. Say in one line when you delegate and why.
+  (Owner decision 2026-11-10.)
+
 ## Open tasks
 - Kept on GitHub: https://github.com/LytronHQ/ops/issues
